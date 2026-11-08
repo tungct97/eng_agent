@@ -1,0 +1,5 @@
+.venv
+build1
+eng_agent
+chroma_db
+book.db
