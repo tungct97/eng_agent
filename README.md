@@ -20,8 +20,7 @@ uv sync                                      # khuyên dùng (dùng pyproject.to
 # hoặc:  python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
 
 # 3. Tạo chunk + vector DB từ build/book.md, rồi hỏi
-uv run eng-agent chunk
-uv run eng-agent index                       # lần đầu tải mô hình embedding ~2 GB
+uv run eng-agent build --skip-ocr               # chunk + index trong một lệnh (lần đầu tải mô hình embedding ~2 GB)
 uv run eng-agent ask
 ```
 
@@ -52,6 +51,7 @@ Mỗi bước đọc đúng file mà bước trước ghi ra, nên chạy riêng
 ```bash
 uv run eng-agent ocr --limit 5     # (cần pages/) thử OCR 5 trang, mở build/book.md xem
 uv run eng-agent build             # ocr + chunk + index cả cuốn
+uv run eng-agent build --skip-ocr  # chỉ chunk + index (dùng build/book.md có sẵn)
 uv run eng-agent chunk             # book.md -> chunks.jsonl + parents.json
 uv run eng-agent index             # chunks -> Chroma
 uv run eng-agent search "bruise"   # xem tìm kiếm trả về gì (không cần LLM)

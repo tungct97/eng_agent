@@ -4,6 +4,7 @@
     eng-agent chunk    # book.md    -> build/chunks.jsonl + build/parents.json
     eng-agent index    # chunks     -> chroma_db/
     eng-agent build    # chạy cả 3 bước trên
+    eng-agent build --skip-ocr   # chỉ chunk + index (dùng build/book.md có sẵn, không cần ảnh scan)
     eng-agent search "bruise"   # xem tìm kiếm trả về gì (không cần LLM)
     eng-agent ask               # hỏi đáp với LLM local (Ollama)
 
@@ -41,7 +42,8 @@ def cmd_index(cfg: Settings, a) -> None:
 
 
 def cmd_build(cfg: Settings, a) -> None:
-    cmd_ocr(cfg, a)
+    if not a.skip_ocr:  # --skip-ocr: dùng build/book.md có sẵn, chỉ chunk + index
+        cmd_ocr(cfg, a)
     cmd_chunk(cfg, a)
     cmd_index(cfg, a)
 
@@ -97,8 +99,9 @@ def main(argv: list[str] | None = None) -> None:
     p.set_defaults(fn=cmd_ocr)
     sub.add_parser("chunk", help="book.md -> chunks.jsonl + parents.json").set_defaults(fn=cmd_chunk)
     sub.add_parser("index", help="chunks.jsonl -> Chroma").set_defaults(fn=cmd_index)
-    p = sub.add_parser("build", help="ocr + chunk + index")
+    p = sub.add_parser("build", help="ocr + chunk + index (thêm --skip-ocr để chỉ chunk + index)")
     add_ocr_opts(p)
+    p.add_argument("--skip-ocr", action="store_true", help="bỏ qua OCR, dùng build/book.md có sẵn")
     p.set_defaults(fn=cmd_build)
     p = sub.add_parser("search", help="xem kết quả tìm kiếm cho một câu hỏi")
     p.add_argument("query")

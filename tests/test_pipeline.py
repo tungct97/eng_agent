@@ -198,3 +198,17 @@ def test_settings_paths_are_derived_from_root(tmp_path):
     assert cfg.book_md == tmp_path / "build" / "book.md"
     assert cfg.pages_dir == tmp_path / "pages" and cfg.chroma_dir == tmp_path / "chroma_db"
     assert cfg.chunks_path.parent == cfg.parents_path.parent == cfg.build_dir
+
+
+def test_build_skip_ocr_runs_only_chunk_and_index(monkeypatch):
+    from english_agent import cli
+
+    calls = []
+    monkeypatch.setattr(cli, "cmd_ocr", lambda cfg, a: calls.append("ocr"))
+    monkeypatch.setattr(cli, "cmd_chunk", lambda cfg, a: calls.append("chunk"))
+    monkeypatch.setattr(cli, "cmd_index", lambda cfg, a: calls.append("index"))
+    cli.main(["build", "--skip-ocr"])
+    assert calls == ["chunk", "index"]
+    calls.clear()
+    cli.main(["build"])
+    assert calls == ["ocr", "chunk", "index"]
