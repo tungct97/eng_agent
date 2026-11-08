@@ -1,7 +1,7 @@
 """Giai đoạn 3 - Indexing: chunks.jsonl -> embedding -> Chroma.
 
-Vào : data/build/chunks.jsonl (kết quả của giai đoạn chunking)
-Ra   : data/chroma_db/
+Vào : build/chunks.jsonl (kết quả của giai đoạn chunking)
+Ra   : chroma_db/
 Dùng get_embeddings()/get_db() chung với retrieval để embedding lúc lưu và lúc hỏi luôn là cùng một mô hình.
 """
 from __future__ import annotations

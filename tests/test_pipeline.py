@@ -151,7 +151,7 @@ PARENTS = {
 
 
 def test_assemble_drops_far_hits_and_collects_images(tmp_path):
-    cfg = Settings(data_dir=tmp_path)
+    cfg = Settings(root=tmp_path)
     r = assemble(fake_hits(cfg), PARENTS, practice=False, cfg=cfg)
     assert r.unit_ids == ["unit-002", "unit-001"]  # unit-009 xa quá ngưỡng, không có trong parents
     assert "Unit 2: Health: injuries - scan page 4" in r.context
@@ -159,7 +159,7 @@ def test_assemble_drops_far_hits_and_collects_images(tmp_path):
 
 
 def test_assemble_practice_uses_exercise_side(tmp_path):
-    cfg = Settings(data_dir=tmp_path)
+    cfg = Settings(root=tmp_path)
     r = assemble(fake_hits(cfg), PARENTS, practice=True, cfg=cfg)
     assert "2.1 ..." in r.context and r.images[0].name == "page_0005.jpg"
 
@@ -180,7 +180,7 @@ class FakeLLM:
 
 
 def test_tutor_answers_and_refuses_off_topic(tmp_path):
-    cfg = Settings(data_dir=tmp_path)
+    cfg = Settings(root=tmp_path)
     llm = FakeLLM()
     ans = Tutor(cfg, FakeRetriever(cfg), llm).ask("bruise?")
     assert ans.text == "ok" and ans.units == ["unit-002", "unit-001"]
@@ -193,7 +193,8 @@ def test_fix_text_recovers_vietnamese_from_bad_terminal_locale():
     assert fix_text(broken) == "tôi muốn"
 
 
-def test_settings_paths_are_derived_from_data_dir(tmp_path):
-    cfg = Settings(data_dir=tmp_path)
+def test_settings_paths_are_derived_from_root(tmp_path):
+    cfg = Settings(root=tmp_path)
     assert cfg.book_md == tmp_path / "build" / "book.md"
+    assert cfg.pages_dir == tmp_path / "pages" and cfg.chroma_dir == tmp_path / "chroma_db"
     assert cfg.chunks_path.parent == cfg.parents_path.parent == cfg.build_dir

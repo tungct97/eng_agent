@@ -1,7 +1,11 @@
 """Cấu hình duy nhất cho cả pipeline: đường dẫn, tên mô hình, ngưỡng. Các giai đoạn không tự đặt hằng số riêng.
 
-Thư mục dữ liệu mặc định là ./data (tính từ nơi bạn chạy lệnh, thường là gốc repo); đổi bằng biến môi trường:
-    ENG_AGENT_DATA, ENG_AGENT_EMBED_MODEL, ENG_AGENT_LLM_MODEL
+Thư mục gốc dữ liệu mặc định là "." (nơi bạn chạy lệnh, thường là gốc repo) với bố cục:
+    pages/      ảnh scan gốc (không commit)
+    build/      book.md + images/ (commit) và chunks.jsonl + parents.json (sinh ra, không commit)
+    chroma_db/  vector DB (không commit)
+Đổi bằng biến môi trường:
+    ENG_AGENT_ROOT, ENG_AGENT_EMBED_MODEL, ENG_AGENT_LLM_MODEL
 """
 from __future__ import annotations
 
@@ -12,7 +16,7 @@ from pathlib import Path
 
 @dataclass(frozen=True)
 class Settings:
-    data_dir: Path = field(default_factory=lambda: Path(os.getenv("ENG_AGENT_DATA", "data")))
+    root: Path = field(default_factory=lambda: Path(os.getenv("ENG_AGENT_ROOT", ".")))
 
     # mô hình (embedding dùng ở cả index lẫn truy vấn nên PHẢI lấy từ đây, không viết lại ở chỗ khác)
     embed_model: str = field(default_factory=lambda: os.getenv("ENG_AGENT_EMBED_MODEL", "BAAI/bge-m3"))
@@ -28,11 +32,11 @@ class Settings:
     # ---- đường dẫn dẫn xuất ----
     @property
     def pages_dir(self) -> Path:  # ảnh scan gốc (bạn tự đặt vào)
-        return self.data_dir / "pages"
+        return self.root / "pages"
 
     @property
     def build_dir(self) -> Path:  # kết quả OCR + chunking
-        return self.data_dir / "build"
+        return self.root / "build"
 
     @property
     def book_md(self) -> Path:
@@ -48,4 +52,4 @@ class Settings:
 
     @property
     def chroma_dir(self) -> Path:
-        return self.data_dir / "chroma_db"
+        return self.root / "chroma_db"

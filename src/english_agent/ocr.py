@@ -1,7 +1,7 @@
 """Giai đoạn 1 - OCR: ảnh trang sách -> book.md (chữ + tiêu đề theo bậc) + ảnh đã nén. Không dùng LLM.
 
-Vào : data/pages/page_XXXX.png
-Ra   : data/build/book.md, data/build/images/page_XXXX.jpg (và *_figN.jpg nếu --figures)
+Vào : pages/page_XXXX.png
+Ra   : build/book.md, build/images/page_XXXX.jpg (và *_figN.jpg nếu --figures)
 """
 from __future__ import annotations
 

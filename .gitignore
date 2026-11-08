@@ -9,6 +9,10 @@ __pycache__/
 .idea/
 .vscode/
 
-# dữ liệu: ảnh scan sách, kết quả OCR/chunk, vector DB. KHÔNG commit (nặng + sách có bản quyền)
-data/
+# ảnh scan gốc (nặng) và vector DB (sinh lại được)
+pages/
 chroma_db/
+
+# sinh lại được bằng `eng-agent chunk` (phụ thuộc phiên bản splitter) -> không commit
+build/chunks.jsonl
+build/parents.json

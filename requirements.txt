@@ -1,0 +1,17 @@
+# Danh sách phụ thuộc cho ai dùng pip. Nguồn chuẩn là pyproject.toml (+ uv.lock nếu dùng uv).
+# Cập nhật khi đổi dependencies:  uv export --no-hashes --no-dev --no-emit-project -o requirements.txt
+# Cài:  pip install -r requirements.txt     (dòng cuối cài luôn lệnh `eng-agent`)
+#
+# Ngoài pip còn cần: tesseract-ocr (chỉ cho bước OCR) và Ollama (cho bước hỏi đáp), xem README.
+langchain-chroma>=1.1.0
+langchain-core>=1.7.6
+langchain-huggingface>=1.2.3
+langchain-ollama>=1.1.0
+langchain-text-splitters>=1.1.3
+sentence-transformers>=6.2.0
+numpy>=2.4.6
+opencv-python-headless>=5.0.0.93
+pillow>=13.0.0
+pytesseract>=0.3.13
+# pypdf>=7.0.0   # tuỳ chọn, chỉ cho `eng-agent ocr --pdf`
+-e .

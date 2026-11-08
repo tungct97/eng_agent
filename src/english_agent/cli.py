@@ -1,8 +1,8 @@
 """Một CLI duy nhất cho cả pipeline:
 
-    eng-agent ocr      # ảnh trang  -> data/build/book.md + images/
-    eng-agent chunk    # book.md    -> data/build/chunks.jsonl + parents.json
-    eng-agent index    # chunks     -> data/chroma_db
+    eng-agent ocr      # ảnh trang  -> build/book.md + build/images/
+    eng-agent chunk    # book.md    -> build/chunks.jsonl + build/parents.json
+    eng-agent index    # chunks     -> chroma_db/
     eng-agent build    # chạy cả 3 bước trên
     eng-agent search "bruise"   # xem tìm kiếm trả về gì (không cần LLM)
     eng-agent ask               # hỏi đáp với LLM local (Ollama)
@@ -82,7 +82,7 @@ def cmd_ask(cfg: Settings, a) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="eng-agent", description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    ap.add_argument("--data-dir", type=Path, help="thư mục dữ liệu (mặc định ./data)")
+    ap.add_argument("--root", type=Path, help="thư mục gốc chứa pages/, build/, chroma_db/ (mặc định: thư mục hiện tại)")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     def add_ocr_opts(p):
@@ -109,8 +109,8 @@ def main(argv: list[str] | None = None) -> None:
 
     a = ap.parse_args(argv)
     cfg = Settings()
-    if a.data_dir:
-        cfg = replace(cfg, data_dir=a.data_dir)
+    if a.root:
+        cfg = replace(cfg, root=a.root)
     a.fn(cfg, a)
 
 

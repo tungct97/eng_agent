@@ -6,8 +6,8 @@ Sách có cấu trúc cố định nên chia theo cấu trúc, không cắt theo
   - Cả Unit lưu thành "parent" để đưa cho LLM khi cần ngữ cảnh đầy đủ.
   - Metadata giữ số trang + đường dẫn ảnh để gửi lại hình minh hoạ.
 
-Vào : data/build/book.md (+ data/build/images/)
-Ra   : data/build/chunks.jsonl, data/build/parents.json
+Vào : build/book.md (+ build/images/)
+Ra   : build/chunks.jsonl, build/parents.json
 """
 from __future__ import annotations
 
