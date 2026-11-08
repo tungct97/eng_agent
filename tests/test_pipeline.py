@@ -1,116 +1,199 @@
-import io
+"""Test offline: không cần Tesseract, Ollama, Chroma hay mô hình embedding."""
 import json
-import sys
 from pathlib import Path
-from types import SimpleNamespace
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from langchain_core.documents import Document
 
-from PIL import Image
+from english_agent import chunking, ocr
+from english_agent.config import Settings
+from english_agent.retrieval import assemble, fix_text
+from english_agent.tutor import NOT_FOUND, Tutor
 
-from eng_agent.agent import Tutor
-from eng_agent.extract import normalize_page, parse_json
-from eng_agent.render import render_visual
-from eng_agent.schema import VisualRef
-from eng_agent.sources import LocalDirSource
-from eng_agent.store import HashEmbedder, Store, chunk_page
+# ----------------------------------------------------------------- sách giả: 2 Unit
+BOOK = """# Page 1
 
-RAW = {
-    "unit": "60 Health: injuries",
-    "printed_page": "122",
-    "sections": [
-        {"heading": "A Common injuries", "type": "vocab",
-         "text": "She cut her finger. He twisted his ankle. She has a bruise.", "figure_ids": ["f1", "bad"]},
-        {"heading": "B Hospital treatment", "type": "note",
-         "text": "He was rushed to hospital and needed ten stitches.", "figure_ids": []},
-    ],
-    "figures": [
-        {"id": "f1", "bbox": [100, 200, 900, 500], "kind": "illustration", "caption": "Five people with injuries"},
-        {"id": "f2", "bbox": [5, 5, 6, 6], "kind": "illustration", "caption": "too small"},
-    ],
+![Page 1](images/page_0001.jpg)
+
+## Contents
+
+- 1 Greetings hello, hi
+- 2 Health: injuries bruise, bandage
+
+---
+
+# Page 2
+
+![Page 2](images/page_0002.jpg)
+
+## Greetings
+
+### A Saying hello
+
+Hello and hi are common greetings. We say hello when we meet someone. Good morning is more formal.
+
+---
+
+# Page 3
+
+![Page 3](images/page_0003.jpg)
+
+## Exercises
+
+1.1 Complete the greeting with a suitable word from the opposite page and say it aloud twice.
+
+1.2 Match each greeting on the left with a reply on the right. Then practise them with a friend.
+
+---
+
+# Page 4
+
+![Page 4](images/page_0004.jpg)
+
+## Health: injuries
+
+### A Common injuries
+
+She cut her finger. He twisted his ankle. She has a bruise on her leg after she fell off her bike.
+
+---
+
+# Page 5
+
+![Page 5](images/page_0005.jpg)
+
+## Exercises
+
+2.1 Complete each sentence with a word about injuries from the opposite page and check it.
+
+2.2 Match the injury on the left with the treatment on the right and then explain your choices.
+"""
+
+
+def make_book(tmp_path: Path) -> Path:
+    (tmp_path / "images").mkdir()
+    for n in (4, 2):
+        (tmp_path / "images" / f"page_{n:04d}_fig1.jpg").write_bytes(b"x")
+    md = tmp_path / "book.md"
+    md.write_text(BOOK, encoding="utf-8")
+    return md
+
+
+# ----------------------------------------------------------------- chunking
+def test_units_are_paired_from_exercise_numbers(tmp_path):
+    pages = chunking.load_pages(make_book(tmp_path))
+    assert chunking.find_units(pages) == {
+        1: {"content": 2, "exercise": 3},
+        2: {"content": 4, "exercise": 5},
+    }
+
+
+def test_run_writes_chunks_and_parents_and_they_load_back(tmp_path):
+    md = make_book(tmp_path)
+    n_chunks, n_units = chunking.run(md, tmp_path / "chunks.jsonl", tmp_path / "parents.json")
+    assert n_units == 2 and n_chunks > 0
+    docs = chunking.load_chunks(tmp_path / "chunks.jsonl")
+    kinds = {d.metadata["chunk_type"] for d in docs}
+    assert {"reference", "exercise", "toc"} <= kinds
+    ref = next(d for d in docs if d.metadata["chunk_type"] == "reference" and d.metadata["unit_no"] == 2)
+    assert ref.metadata["parent_id"] == "unit-002"
+    assert ref.metadata["scan_page"] == 4
+    assert ref.page_content.startswith("Unit 2: Health: injuries (reference)")
+    assert ref.metadata["figure_images"] == "images/page_0004_fig1.jpg"
+    parents = chunking.load_parents(tmp_path / "parents.json")
+    assert parents["unit-002"]["pages"] == [4, 5] and "bruise" in parents["unit-002"]["reference"]
+
+
+def test_exercises_are_split_per_exercise(tmp_path):
+    md = make_book(tmp_path)
+    docs, _ = chunking.build_documents(md)
+    nums = sorted(d.metadata["exercise_no"] for d in docs if d.metadata["chunk_type"] == "exercise")
+    assert nums == ["1.1", "1.2", "2.1", "2.2"]
+
+
+def test_clean_removes_footer_and_dot_leaders():
+    out = chunking.clean("English Vocabulary in Use (pre-intermediate & intermediate) 123\nI have a ......... on my leg")
+    assert "English Vocabulary" not in out and "____" in out
+
+
+# ----------------------------------------------------------------- OCR: nhận dạng tiêu đề (hàm thuần)
+def line(text, h=20, top=500, par=(1, 1)):
+    return {"text": text, "h": h, "top": top, "par": par}
+
+
+def test_heading_levels():
+    med = 20
+    assert ocr.level_of(line("60 Health: injuries", h=34, top=50), med, 1500) == 2
+    assert ocr.level_of(line("A Common injuries", h=24), med, 1500) == 3
+    assert ocr.level_of(line("NOTE"), med, 1500) == 4
+    assert ocr.level_of(line("She cut her finger and went home."), med, 1500) == 0
+
+
+def test_toc_page_becomes_bullets_not_headings():
+    lines = [line(f"{n} Topic name here", h=30, top=100 * n) for n in range(37, 42)]
+    lines.append(line("37 Prepositions: place 38 Adverbs: frequency", top=10))
+    md = ocr.to_markdown(lines, 1500)
+    assert "#" not in md.replace("##", "") or md.count("##") == 0
+    assert "- 38 Adverbs: frequency" in md
+
+
+# ----------------------------------------------------------------- retrieval + tutor (không DB, không LLM)
+def fake_hits(cfg):
+    d1 = Document(page_content="x", metadata={"parent_id": "unit-002", "figure_images": "images/page_0004_fig1.jpg"})
+    d2 = Document(page_content="y", metadata={"parent_id": "unit-001", "figure_images": ""})
+    far = Document(page_content="z", metadata={"parent_id": "unit-009", "figure_images": ""})
+    return [(d1, 0.31), (d2, 0.50), (far, 0.90)]
+
+
+PARENTS = {
+    "unit-001": {"unit_no": 1, "title": "Greetings", "pages": [2, 3], "reference": "hello", "exercises": "1.1 ..."},
+    "unit-002": {"unit_no": 2, "title": "Health: injuries", "pages": [4, 5], "reference": "bruise", "exercises": "2.1 ..."},
 }
 
 
-def make_pages(tmp_path):
-    img = Image.new("RGB", (1000, 1400), "white")
-    for x in range(100, 900):  # coloured band at the figure position
-        for y in range(280, 700):
-            img.putpixel((x, y), (200, 30, 30))
-    img.save(tmp_path / "page_0129.png")
-    return LocalDirSource(tmp_path)
+def test_assemble_drops_far_hits_and_collects_images(tmp_path):
+    cfg = Settings(data_dir=tmp_path)
+    r = assemble(fake_hits(cfg), PARENTS, practice=False, cfg=cfg)
+    assert r.unit_ids == ["unit-002", "unit-001"]  # unit-009 xa quá ngưỡng, không có trong parents
+    assert "Unit 2: Health: injuries - scan page 4" in r.context
+    assert r.images[0].name == "page_0004.jpg" and r.images[-1].name == "page_0004_fig1.jpg"
 
 
-def test_parse_json_tolerates_fences():
-    assert parse_json('```json\n{"a": 1}\n```') == {"a": 1}
+def test_assemble_practice_uses_exercise_side(tmp_path):
+    cfg = Settings(data_dir=tmp_path)
+    r = assemble(fake_hits(cfg), PARENTS, practice=True, cfg=cfg)
+    assert "2.1 ..." in r.context and r.images[0].name == "page_0005.jpg"
 
 
-def test_normalize_drops_bad_figures_and_links():
-    page = normalize_page(RAW)
-    assert [f["id"] for f in page["figures"]] == ["f1"]
-    assert page["figures"][0]["bbox"] == (0.1, 0.2, 0.9, 0.5)
-    assert page["sections"][0]["figure_ids"] == ["f1"]
+class FakeRetriever:
+    def __init__(self, cfg, found=True):
+        self.cfg, self.found = cfg, found
+
+    def search(self, q):
+        hits = fake_hits(self.cfg) if self.found else [(fake_hits(self.cfg)[2][0], 0.9)]
+        return assemble(hits, PARENTS, False, self.cfg)
 
 
-def test_chunk_carries_visual_metadata():
-    chunks = chunk_page(normalize_page(RAW), "page_0129.png", 129)
-    assert len(chunks) == 2
-    assert chunks[0].visuals[0].bbox == (0.1, 0.2, 0.9, 0.5)
-    assert chunks[1].visuals == []
-    assert chunks[0].printed_page == "122"
+class FakeLLM:
+    def invoke(self, messages):
+        self.last = messages
+        return type("R", (), {"content": "ok"})()
 
 
-def test_store_search_and_reindex(tmp_path):
-    store = Store(str(tmp_path / "t.db"), HashEmbedder())
-    store.save_page("page_0129.png", 129, normalize_page(RAW))
-    assert store.build_index() == 2
-    top = store.search("bruise ankle finger", k=1)[0].chunk
-    assert top.section == "A Common injuries" and top.visuals
-    assert store.build_index(max_chars=30) > 2  # re-chunk without extraction
+def test_tutor_answers_and_refuses_off_topic(tmp_path):
+    cfg = Settings(data_dir=tmp_path)
+    llm = FakeLLM()
+    ans = Tutor(cfg, FakeRetriever(cfg), llm).ask("bruise?")
+    assert ans.text == "ok" and ans.units == ["unit-002", "unit-001"]
+    assert "Unit 2: Health: injuries" in llm.last[1][1]
+    assert Tutor(cfg, FakeRetriever(cfg, found=False), llm).ask("thời tiết?").text == NOT_FOUND
 
 
-def test_render_crops_only_the_box(tmp_path):
-    src = make_pages(tmp_path)
-    ref = VisualRef("page_0129.png", (0.1, 0.2, 0.9, 0.5))
-    png = render_visual(src, ref)
-    im = Image.open(io.BytesIO(png))
-    assert im.size[0] < 1000 and im.size[1] < 700  # smaller than the page
-    assert im.getpixel((im.width // 2, im.height // 2)) == (200, 30, 30)
+def test_fix_text_recovers_vietnamese_from_bad_terminal_locale():
+    broken = "tôi muốn".encode("utf-8").decode("ascii", "surrogateescape")
+    assert fix_text(broken) == "tôi muốn"
 
 
-def test_path_traversal_blocked(tmp_path):
-    src = make_pages(tmp_path)
-    try:
-        src.get_bytes("../x.png")
-    except ValueError:
-        return
-    raise AssertionError("traversal not blocked")
-
-
-class FakeClient:
-    """Scripted model: search -> show_visual -> final answer."""
-
-    def __init__(self):
-        self.calls = 0
-        self.messages = SimpleNamespace(create=self.create)
-
-    def create(self, **kw):
-        self.calls += 1
-        if self.calls == 1:
-            blk = SimpleNamespace(type="tool_use", id="t1", name="search_lessons", input={"query": "injuries"})
-            return SimpleNamespace(stop_reason="tool_use", content=[blk])
-        if self.calls == 2:
-            last = kw["messages"][-1]["content"][0]["content"]
-            vid = json.loads(last)[0]["visual_ids"][0]
-            blk = SimpleNamespace(type="tool_use", id="t2", name="show_visual", input={"visual_id": vid})
-            return SimpleNamespace(stop_reason="tool_use", content=[blk])
-        return SimpleNamespace(stop_reason="end_turn", content=[SimpleNamespace(type="text", text="Here you go.")])
-
-
-def test_agent_sends_screenshot_on_demand(tmp_path):
-    src = make_pages(tmp_path)
-    store = Store(str(tmp_path / "t.db"), HashEmbedder())
-    store.save_page("page_0129.png", 129, normalize_page(RAW))
-    store.build_index()
-    reply = Tutor(FakeClient(), store, src).ask("injuries?")
-    assert reply.text == "Here you go."
-    assert len(reply.images) == 1 and reply.images[0][1][:4] == b"\x89PNG"
+def test_settings_paths_are_derived_from_data_dir(tmp_path):
+    cfg = Settings(data_dir=tmp_path)
+    assert cfg.book_md == tmp_path / "build" / "book.md"
+    assert cfg.chunks_path.parent == cfg.parents_path.parent == cfg.build_dir

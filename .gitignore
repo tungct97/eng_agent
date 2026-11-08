@@ -1,5 +1,14 @@
-.venv
-build1
-eng_agent
-chroma_db
-book.db
+# môi trường
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+
+# IDE
+.idea/
+.vscode/
+
+# dữ liệu: ảnh scan sách, kết quả OCR/chunk, vector DB. KHÔNG commit (nặng + sách có bản quyền)
+data/
+chroma_db/
