@@ -1,5 +1,18 @@
-.venv
-build1
-eng_agent
-chroma_db
-book.db
+# môi trường
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.env
+
+# IDE
+.idea/
+.vscode/
+
+# ảnh scan gốc (nặng) và vector DB (sinh lại được)
+pages/
+chroma_db/
+
+# sinh lại được bằng `eng-agent chunk` (phụ thuộc phiên bản splitter) -> không commit
+build/chunks.jsonl
+build/parents.json
