@@ -20,6 +20,11 @@ from pathlib import Path
 
 from .config import Settings
 
+try:  # bật chỉnh sửa dòng kiểu readline cho input(): xoá/di chuyển đúng với chữ có dấu UTF-8 (tránh ký tự lỗi �)
+    import readline  # noqa: F401
+except ImportError:  # Windows thuần không có readline
+    pass
+
 
 def cmd_ocr(cfg: Settings, a) -> None:
     from . import ocr
@@ -75,6 +80,8 @@ def _print_answer(ans) -> None:
     print(ans.text)
     for p in ans.images:
         print("[ảnh]", p)
+    if ans.unit_no and ans.part:
+        print(f"[Unit {ans.unit_no} · phần {ans.part[0]}/{ans.part[1]}]")
 
 
 def cmd_ask(cfg: Settings, a) -> None:

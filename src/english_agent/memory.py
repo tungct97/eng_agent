@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS sessions(
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     title        TEXT,
     current_unit INTEGER,           -- Unit đang học trong phiên này (NULL = chat tự do)
+    lesson_step  INTEGER NOT NULL DEFAULT 0,  -- chỉ số phần kế tiếp cần dạy trong Unit đó
     created_at   TEXT NOT NULL,
     updated_at   TEXT NOT NULL
 );
@@ -60,6 +61,9 @@ class ConversationStore:
         self.db.execute("PRAGMA foreign_keys = ON")
         with self.db:
             self.db.executescript(SCHEMA)
+            cols = {r["name"] for r in self.db.execute("PRAGMA table_info(sessions)")}
+            if "lesson_step" not in cols:  # DB tạo bởi phiên bản cũ
+                self.db.execute("ALTER TABLE sessions ADD COLUMN lesson_step INTEGER NOT NULL DEFAULT 0")
 
     def close(self) -> None:
         self.db.close()
@@ -92,8 +96,17 @@ class ConversationStore:
         return [dict(r) for r in rows]
 
     def set_current_unit(self, sid: int, unit: int | None) -> None:
+        """Đặt Unit đang học. Đổi sang Unit khác thì bước học về 0; đặt lại đúng Unit hiện tại thì giữ nguyên bước."""
         with self.db:
-            self.db.execute("UPDATE sessions SET current_unit=?, updated_at=? WHERE id=?", (unit, _now(), sid))
+            self.db.execute(
+                "UPDATE sessions SET lesson_step = CASE WHEN current_unit IS ? THEN lesson_step ELSE 0 END, "
+                "current_unit=?, updated_at=? WHERE id=?",
+                (unit, unit, _now(), sid),
+            )
+
+    def set_lesson_step(self, sid: int, step: int) -> None:
+        with self.db:
+            self.db.execute("UPDATE sessions SET lesson_step=?, updated_at=? WHERE id=?", (step, _now(), sid))
 
     # ------------------------------------------------------------ tin nhắn
     def add_message(self, sid: int, role: str, content: str, units=(), images=()) -> None:
