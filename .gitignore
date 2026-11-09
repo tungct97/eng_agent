@@ -13,6 +13,9 @@ __pycache__/
 pages/
 chroma_db/
 
+# hội thoại và tiến độ học của bạn (dữ liệu cá nhân)
+conversations.db
+
 # sinh lại được bằng `eng-agent chunk` (phụ thuộc phiên bản splitter) -> không commit
 build/chunks.jsonl
 build/parents.json

@@ -4,6 +4,7 @@ Thư mục gốc dữ liệu mặc định là "." (nơi bạn chạy lệnh, th
     pages/      ảnh scan gốc (không commit)
     build/      book.md + images/ (commit) và chunks.jsonl + parents.json (sinh ra, không commit)
     chroma_db/  vector DB (không commit)
+    conversations.db  hội thoại + tiến độ học (không commit)
 Đổi bằng biến môi trường:
     ENG_AGENT_ROOT, ENG_AGENT_EMBED_MODEL, ENG_AGENT_LLM_MODEL
 """
@@ -29,6 +30,11 @@ class Settings:
     max_distance: float = 0.55  # cosine distance tối đa; xa hơn coi như ngoài sách
     collection: str = "evu"
 
+    # hội thoại
+    history_messages: int = 8  # số tin nhắn gần nhất đưa lại cho LLM (4 lượt hỏi-đáp)
+    history_chars: int = 1200  # cắt mỗi tin trong lịch sử cho gọn
+    rewrite_queries: bool = True  # viết lại câu hỏi nối tiếp thành câu tìm kiếm đầy đủ (tốn thêm 1 lần gọi LLM)
+
     # ---- đường dẫn dẫn xuất ----
     @property
     def pages_dir(self) -> Path:  # ảnh scan gốc (bạn tự đặt vào)
@@ -49,6 +55,10 @@ class Settings:
     @property
     def parents_path(self) -> Path:
         return self.build_dir / "parents.json"
+
+    @property
+    def db_path(self) -> Path:  # hội thoại + tiến độ học (SQLite)
+        return self.root / "conversations.db"
 
     @property
     def chroma_dir(self) -> Path:
