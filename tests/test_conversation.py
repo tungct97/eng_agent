@@ -6,7 +6,9 @@ from langchain_core.documents import Document
 from english_agent.config import Settings
 from english_agent.memory import ConversationStore
 from english_agent.retrieval import assemble
-from english_agent.tutor import ALL_DONE, CONTINUE_RE, LEARN, NEXT, QUESTION, Tutor, lesson_parts
+from english_agent.tutor import (
+    ALL_DONE, CONTINUE_RE, LEARN, LESSON_RULES, NEXT, QUESTION, STYLE_NOTE, STYLE_RE, Tutor, lesson_parts,
+)
 
 
 def sec(title, word, n=300):
@@ -129,6 +131,7 @@ def test_old_database_without_lesson_step_is_migrated(tmp_path):
     old.close()
     store = ConversationStore(path)
     assert store.session(1)["lesson_step"] == 0 and store.session(1)["current_unit"] == 5
+    assert store.session(1)["style"] is None
 
 
 # ----------------------------------------------------------------- điều hướng
@@ -282,3 +285,35 @@ def test_cli_lists_and_prints_saved_sessions(tmp_path, capsys):
     main(["--root", str(tmp_path), "history", str(sid)])
     out = capsys.readouterr().out
     assert "bạn> dạy tôi unit 5" in out and "tutor> Unit 5 nói về" in out
+
+
+# ----------------------------------------------------------------- cách học do người học yêu cầu
+ASK = "hãy dạy tôi tiếng anh, bằng cách đưa ra 1 từ vựng và bắt tôi dịch nó sang tiếng anh"
+
+
+def test_style_pattern():
+    assert STYLE_RE.search(ASK)
+    for text in ["dictionary nghĩa là từ điển", "dọn cái bảng", "dạy tôi học"]:
+        assert not STYLE_RE.search(text)
+
+
+def test_styled_lesson_asks_one_item_at_a_time_and_gives_answers(tmp_path):
+    db = tmp_path / "s.db"
+    cfg, llm, store, tutor = make(tmp_path, db)
+    sid = tutor.new_session()
+    first = tutor.chat(sid, ASK)
+    assert first.part == (1, 3) and store.session(sid)["style"] == ASK
+    system = llm.main_calls()[-1][0][1]
+    assert STYLE_NOTE.split("{style}")[0] in system and ASK in system and "can NOT see the textbook" in LESSON_RULES
+    assert "Use ONLY words" in llm.human() and "item 1 of 3" in llm.human()
+
+    tutor.chat(sid, "dictionary")
+    assert "state the correct answer yourself" in llm.human() and "item 2 of 3" in llm.human()
+    tutor.chat(sid, "meaning")
+    last = tutor.chat(sid, "pronunciation")  # 4 lượt: sang phần 2
+    assert last.part == (2, 3) and "item 1 of 3" in llm.human()
+
+    store.close()  # cách học được nhớ sau khi khởi động lại
+    cfg2, llm2, store2, tutor2 = make(tmp_path, db)
+    tutor2.chat(sid, "dọn cái bảng")
+    assert ASK in llm2.main_calls()[-1][0][1]

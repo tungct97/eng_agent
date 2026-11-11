@@ -28,24 +28,49 @@ SYSTEM = """You are a friendly English tutor for a Vietnamese learner, in an ong
 - Keep replies short (under about 200 words). Mention the unit and page you used.
 - The excerpts come from OCR and may contain garbled text; ignore anything that does not make sense."""
 
-LESSON_RULES = """The learner is studying one unit step by step. The program decides which part of the unit to teach in
-each turn: follow the instructions for this turn exactly, teach only the part given, and never repeat a practice question
-that already appears in the conversation."""
+LESSON_RULES = """The learner is studying one unit step by step. The program decides which part of the unit to use in each turn:
+follow the instructions for this turn exactly and never repeat a practice question that already appears in the conversation.
+- The learner can NOT see the textbook. Never tell them to look at an exercise, a page or a number (such as "exercise 3.1");
+  write every question out in full in your message.
+- After the learner answers, ALWAYS state the correct answer yourself. Never ask the learner to check it or to report progress."""
+
+STYLE_NOTE = (
+    "The learner asked for this teaching style. It has priority over the default lesson format:\n"
+    '"{style}"'
+)
 
 LESSON_SIDE = """The learner asked a side question in the middle of a lesson. Answer it briefly from the excerpts, then remind
 them to answer your last practice question, or to say "tiếp tục" to go on."""
 
-START = """The learner has just started this unit. State the goal of the unit in one line. Then teach ONLY the part above:
-3-5 key words with Vietnamese meanings and one example. Then ask exactly ONE short practice question about this part and wait."""
-REPLY = """First judge the learner's reply to your previous practice question honestly (it is an answer, not a new request).
-Then teach ONLY the new part above, without repeating earlier parts: 3-5 key words with Vietnamese meanings and one example.
-Then ask ONE new practice question about this part and wait."""
-CONTINUE = """Teach ONLY the part above, without repeating earlier parts: 3-5 key words with Vietnamese meanings and one example.
-Then ask ONE new practice question about this part and wait."""
-SUMMARY_REPLY = """First judge the learner's reply to your previous practice question honestly. All parts of this unit have now been
-taught: summarise the unit in three lines and tell the learner to say "bài tiếp" for the next unit. Do not ask more questions."""
-SUMMARY = """All parts of this unit have been taught: summarise the unit in three lines and tell the learner to say "bài tiếp"
-for the next unit. Do not ask more questions."""
+QUESTIONS_PER_PART = 3  # khi người học yêu cầu cách học riêng (vd. mỗi lần một từ), mỗi phần được hỏi tối đa chừng này lượt
+
+
+def lesson_instruction(kind: str, styled: bool, summary: bool) -> str:
+    """Chỉ dẫn cho LLM ở lượt này. kind: start | continue | reply."""
+    judge = (
+        "First judge the learner's reply to your previous question honestly (it is an answer, not a new request) "
+        "and state the correct answer yourself. "
+        if kind == "reply"
+        else ""
+    )
+    if summary:
+        return judge + (
+            'All parts of this unit have been taught: summarise the unit in three lines and tell the learner to say '
+            '"bài tiếp" for the next unit. Do not ask more questions.'
+        )
+    opening = "The learner has just started this unit. State the goal of the unit in one line. " if kind == "start" else ""
+    if styled:
+        task = (
+            "Use ONLY words or phrases from the part above, in the learner's requested style. Give ONE item at a time, "
+            "write the question out in full, choose an item that was not used earlier in this conversation, then wait."
+        )
+    else:
+        task = (
+            "Teach ONLY the part above, without repeating earlier parts: 3-5 key words with Vietnamese meanings and one "
+            "example. Then ask ONE short practice question about this part and wait."
+        )
+    return opening + judge + task
+
 
 REWRITE = """Conversation so far:
 {history}
@@ -62,6 +87,11 @@ ALL_DONE = "Bạn đã học hết các Unit trong sách rồi, chúc mừng! B�
 UNIT_NO = re.compile(r"\bunit\s*(\d{1,3})\b", re.I)
 LEARN = re.compile(r"\b(dạy|teach)\b|học (theo )?(từng )?unit|bắt đầu (học|bài)|start (a )?lesson|let'?s learn|learn unit", re.I)
 NEXT = re.compile(r"unit (tiếp|kế|mới|sau)|bài (tiếp|kế|mới|sau)|next (unit|lesson)", re.I)
+STYLE_RE = re.compile(
+    r"bằng cách|theo cách|bắt tôi|hỏi tôi|đố tôi|cho tôi (làm|dịch)|mỗi lần|từng (từ|câu)\b|một từ|1 từ|"
+    r"one (word|question|at a time)|quiz me|test me|flashcard",
+    re.I,
+)
 CONTINUE_RE = re.compile(r"^\s*(tiếp tục|tiếp đi|tiếp nào|tiếp|continue|go on|next part|phần (tiếp|sau|kế))\b", re.I)
 QUESTION = re.compile(r"\?|là gì|nghĩa là|nghĩa của|giải thích|what (does|is)|how (do|to)|explain|cho (tôi )?ví dụ", re.I)
 
@@ -192,6 +222,11 @@ class Tutor:
         history = self.store.history(session_id, limit=self.cfg.history_messages)
         seen_units = {u for m in self.store.history(session_id) for u in m.units}
 
+        style = sess.get("style") or ""
+        if STYLE_RE.search(text):  # "hãy dạy tôi bằng cách đưa 1 từ rồi bắt tôi dịch" -> nhớ cho cả phiên
+            style = text[:300]
+            self.store.set_style(session_id, style)
+
         route = self._route(text, sess)
         if route.mode == "finished":
             self.store.set_current_unit(session_id, None)
@@ -210,26 +245,30 @@ class Tutor:
         system, instr = SYSTEM, ""
         kind = route.kind
         if unit and kind in ("start", "continue", "reply"):
-            n = len(self.parts_of(unit))
+            total = len(self.parts_of(unit)) * (QUESTIONS_PER_PART if style else 1)
             if kind == "start":
                 step = 0
-            if step >= n and kind != "start" and self.store.progress().get(unit) == "done":
+            if step >= total and kind != "start" and self.store.progress().get(unit) == "done":
                 kind = "side"  # Unit đã dạy xong và đã tóm tắt: chỉ trả lời tự do, không tóm tắt lại
 
         if unit and kind in ("start", "continue", "reply"):
             parts, title = self.parts_of(unit), self.parents[unit_key(unit)]["title"]
-            n = len(parts)
+            n, per = len(parts), (QUESTIONS_PER_PART if style else 1)
             r = assemble([], self.parents, False, self.cfg, pinned)  # chỉ dùng để lấy Unit + ảnh; KHÔNG tìm thêm Unit khác
             system += "\n\n" + LESSON_RULES
-            if step < n:
+            if style:
+                system += "\n\n" + STYLE_NOTE.format(style=style)
+            if step < n * per:
+                idx, sub = divmod(step, per)  # phần thứ idx, lượt thứ sub trong phần đó
                 page = self.parents[unit_key(unit)]["pages"][0]
-                context = f"[Unit {unit}: {title} - part {step + 1} of {n} - scan page {page}]\n{parts[step]}"
-                instr = {"start": START, "reply": REPLY, "continue": CONTINUE}[kind]
+                item = f", item {sub + 1} of {per}" if per > 1 else ""
+                context = f"[Unit {unit}: {title} - part {idx + 1} of {n}{item} - scan page {page}]\n{parts[idx]}"
+                instr = lesson_instruction(kind, bool(style), summary=False)
                 self.store.set_lesson_step(session_id, step + 1)
-                part = (step + 1, n)
+                part = (idx + 1, n)
             else:  # đã dạy hết các phần -> tóm tắt, đánh dấu xong
                 context = f"[Unit {unit}: {title} - all {n} parts have been taught]"
-                instr = SUMMARY_REPLY if kind == "reply" else SUMMARY
+                instr = lesson_instruction(kind, bool(style), summary=True)
                 self.store.set_progress(unit, "done")
                 part = (n, n)
         else:

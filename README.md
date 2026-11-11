@@ -79,9 +79,12 @@ Cấu hình qua biến môi trường `ENG_AGENT_ROOT`, `ENG_AGENT_EMBED_MODEL`,
 - **Lưu vào SQLite** (`conversations.db`): `sessions` (phiên + Unit đang học), `messages` (từng tin, kèm Unit và ảnh đã
   dùng), `progress` (Unit nào đang học / đã xong). Mở lại bằng `ask -c` hoặc `ask -s <số phiên>`; tiến độ dùng chung
   cho mọi phiên.
+- **Cách học theo ý bạn:** nói ví dụ "dạy tôi bằng cách đưa 1 từ và bắt tôi dịch sang tiếng Anh" (hoặc `/style ...`,
+  `/style off`) thì tutor nhớ cách đó cho cả phiên, mỗi lượt chỉ hỏi MỘT mục, tự viết đầy đủ câu hỏi (người học không
+  thấy sách nên không bao giờ nói "bài 3.1") và luôn tự nêu đáp án đúng sau khi bạn trả lời.
 - Ảnh trang chỉ được gửi khi một Unit mới xuất hiện trong phiên, không gửi lặp mỗi lượt.
 
-Lệnh trong lúc chat: `/learn [N]`, `/next`, `/progress`, `/new`, `/help`, `/quit`.
+Lệnh trong lúc chat: `/learn [N]`, `/next`, `/style [mô tả|off]`, `/progress`, `/new`, `/help`, `/quit`.
 
 ## Cấu trúc mã
 

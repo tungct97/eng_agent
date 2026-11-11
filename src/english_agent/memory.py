@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS sessions(
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     title        TEXT,
     current_unit INTEGER,           -- Unit đang học trong phiên này (NULL = chat tự do)
-    lesson_step  INTEGER NOT NULL DEFAULT 0,  -- chỉ số phần kế tiếp cần dạy trong Unit đó
+    lesson_step  INTEGER NOT NULL DEFAULT 0,  -- số lượt đã dạy trong Unit đó (code dùng để chọn phần kế tiếp)
+    style        TEXT,              -- cách học người học yêu cầu (vd. 'đưa 1 từ, bắt tôi dịch'); áp dụng mọi lượt
     created_at   TEXT NOT NULL,
     updated_at   TEXT NOT NULL
 );
@@ -62,8 +63,9 @@ class ConversationStore:
         with self.db:
             self.db.executescript(SCHEMA)
             cols = {r["name"] for r in self.db.execute("PRAGMA table_info(sessions)")}
-            if "lesson_step" not in cols:  # DB tạo bởi phiên bản cũ
-                self.db.execute("ALTER TABLE sessions ADD COLUMN lesson_step INTEGER NOT NULL DEFAULT 0")
+            for col, ddl in (("lesson_step", "INTEGER NOT NULL DEFAULT 0"), ("style", "TEXT")):
+                if col not in cols:  # DB tạo bởi phiên bản cũ
+                    self.db.execute(f"ALTER TABLE sessions ADD COLUMN {col} {ddl}")
 
     def close(self) -> None:
         self.db.close()
@@ -103,6 +105,10 @@ class ConversationStore:
                 "current_unit=?, updated_at=? WHERE id=?",
                 (unit, unit, _now(), sid),
             )
+
+    def set_style(self, sid: int, style: str | None) -> None:
+        with self.db:
+            self.db.execute("UPDATE sessions SET style=?, updated_at=? WHERE id=?", (style or None, _now(), sid))
 
     def set_lesson_step(self, sid: int, step: int) -> None:
         with self.db:

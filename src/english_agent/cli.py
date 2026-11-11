@@ -71,6 +71,7 @@ HELP = """Lệnh trong lúc chat:
   /learn [N]   học theo Unit (bỏ N = Unit tiếp theo chưa học xong)
   /next        xong Unit này, sang Unit tiếp theo
   /progress    xem tiến độ học
+  /style [mô tả | off]   đặt cách học, vd: /style mỗi lần đưa 1 từ tiếng Việt, tôi dịch sang tiếng Anh
   /new         mở phiên mới
   /help        hiện trợ giúp      /quit  thoát
 Cũng có thể nói tự nhiên: "dạy tôi unit 5", "bài tiếp"."""
@@ -121,6 +122,16 @@ def cmd_ask(cfg: Settings, a) -> None:
         elif cmd == "/new":
             sid = tutor.new_session()
             print(f"Phiên mới #{sid}")
+        elif cmd == "/style":
+            arg = arg.strip()
+            if arg.lower() in ("off", "tắt", "xoá", "xoa"):
+                tutor.store.set_style(sid, None)
+                print("Đã tắt cách học riêng.")
+            elif arg:
+                tutor.store.set_style(sid, arg[:300])
+                print(f"Đã đặt cách học: {arg[:300]}")
+            else:
+                print("Cách học hiện tại:", tutor.store.session(sid).get("style") or "(mặc định)")
         elif cmd == "/progress":
             print("\n".join(tutor.progress_lines()))
         elif cmd in ("/learn", "/next"):
