@@ -215,10 +215,10 @@ class Tutor:
         if NEXT.search(text):  # chuyển Unit: đánh dấu Unit hiện tại là xong
             if current:
                 self.store.set_progress(current, "done")
-            nxt = self.store.next_unit(self.unit_numbers)
+            nxt = self.store.next_unit(self.unit_numbers, self.cfg.start_unit)
             return Route("lesson", nxt, "start", (nxt,)) if nxt else Route("finished")
         if LEARN.search(text):  # bắt đầu / tiếp tục học theo Unit
-            unit = wanted or current or self.store.next_unit(self.unit_numbers)
+            unit = wanted or current or self.store.next_unit(self.unit_numbers, self.cfg.start_unit)
             if not unit:
                 return Route("finished")
             return Route("lesson", unit, "continue" if unit == current else "start", (unit,))

@@ -6,7 +6,7 @@ Thư mục gốc dữ liệu mặc định là "." (nơi bạn chạy lệnh, th
     chroma_db/  vector DB (không commit)
     conversations.db  hội thoại + tiến độ học (không commit)
 Đổi bằng biến môi trường:
-    ENG_AGENT_ROOT, ENG_AGENT_EMBED_MODEL, ENG_AGENT_LLM_MODEL
+    ENG_AGENT_ROOT, ENG_AGENT_EMBED_MODEL, ENG_AGENT_LLM_MODEL, ENG_AGENT_START_UNIT
 """
 from __future__ import annotations
 
@@ -30,7 +30,8 @@ class Settings:
     max_distance: float = 0.55  # cosine distance tối đa; xa hơn coi như ngoài sách
     collection: str = "evu"
 
-    # hội thoại
+    # hội thoại / học theo Unit
+    start_unit: int = field(default_factory=lambda: int(os.getenv("ENG_AGENT_START_UNIT", "6")))  # Unit đầu tiên khi bắt đầu học
     history_messages: int = 8  # số tin nhắn gần nhất đưa lại cho LLM (4 lượt hỏi-đáp)
     history_chars: int = 1200  # cắt mỗi tin trong lịch sử cho gọn
     rewrite_queries: bool = True  # viết lại câu hỏi nối tiếp thành câu tìm kiếm đầy đủ (tốn thêm 1 lần gọi LLM)

@@ -192,6 +192,7 @@ def main(argv: list[str] | None = None) -> None:
     p.set_defaults(fn=cmd_search)
     p = sub.add_parser("ask", help="hội thoại với LLM local (lưu vào conversations.db)")
     p.add_argument("-q", "--question", help="hỏi một câu rồi thoát (bỏ qua để vào chế độ hội thoại)")
+    p.add_argument("--start-unit", type=int, help="Unit bắt đầu học (mặc định 6, hoặc ENG_AGENT_START_UNIT); Unit đã xong thì bỏ qua")
     p.add_argument("-c", "--continue", dest="cont", action="store_true", help="tiếp tục phiên gần nhất")
     p.add_argument("-s", "--session", type=int, help="tiếp tục phiên theo số (xem bằng `eng-agent sessions`)")
     p.set_defaults(fn=cmd_ask)
@@ -204,6 +205,8 @@ def main(argv: list[str] | None = None) -> None:
     cfg = Settings()
     if a.root:
         cfg = replace(cfg, root=a.root)
+    if getattr(a, "start_unit", None):
+        cfg = replace(cfg, start_unit=a.start_unit)
     a.fn(cfg, a)
 
 

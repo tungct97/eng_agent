@@ -152,7 +152,7 @@ class ConversationStore:
     def progress(self) -> dict[int, str]:
         return {r["unit_no"]: r["status"] for r in self.db.execute("SELECT unit_no, status FROM progress")}
 
-    def next_unit(self, all_units: list[int]) -> int | None:
-        """Unit đầu tiên (theo thứ tự trong sách) chưa học xong; None nếu đã học hết."""
+    def next_unit(self, all_units: list[int], start: int = 1) -> int | None:
+        """Unit đầu tiên (theo thứ tự trong sách), từ `start` trở đi, chưa học xong; None nếu đã học hết."""
         done = {u for u, s in self.progress().items() if s == "done"}
-        return next((u for u in sorted(all_units) if u not in done), None)
+        return next((u for u in sorted(all_units) if u >= start and u not in done), None)

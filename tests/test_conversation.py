@@ -55,7 +55,7 @@ class FakeLLM:
 
 
 def make(tmp_path, db=":memory:"):
-    cfg = Settings(root=tmp_path)
+    cfg = Settings(root=tmp_path, start_unit=1)
     llm, store = FakeLLM(), ConversationStore(db)
     return cfg, llm, store, Tutor(cfg, FakeRetriever(cfg), llm, store)
 
@@ -106,6 +106,7 @@ def test_store_survives_reopen_and_tracks_progress(tmp_path):
     assert again.history(sid)[0].content == "hello"
     assert again.progress() == {1: "done", 2: "done"}
     assert again.next_unit([1, 2, 3]) == 3 and again.next_unit([1, 2]) is None
+    assert again.next_unit([1, 2, 3, 4], start=4) == 4 and again.next_unit([1, 2, 3], start=4) is None
 
 
 def test_lesson_step_resets_only_when_unit_changes(tmp_path):
@@ -343,3 +344,12 @@ def test_long_plan_message_is_not_stored_as_style(tmp_path):
     sid = tutor.new_session()
     tutor.chat(sid, "hãy giúp tôi học theo từng unit, bằng cách " + "giới thiệu từ vựng rồi cho tôi làm bài tập " * 6)
     assert store.session(sid)["style"] is None
+
+
+def test_lesson_starts_from_configured_unit(tmp_path):
+    cfg = Settings(root=tmp_path, start_unit=2)
+    llm, store = FakeLLM(), ConversationStore(":memory:")
+    tutor = Tutor(cfg, FakeRetriever(cfg), llm, store)
+    ans = tutor.chat(tutor.new_session(), "dạy tôi học")
+    assert ans.unit_no == 2  # bỏ qua Unit 1
+    assert Settings().start_unit == 6

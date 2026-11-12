@@ -87,6 +87,9 @@ Cấu hình qua biến môi trường `ENG_AGENT_ROOT`, `ENG_AGENT_EMBED_MODEL`,
   thấy sách nên không bao giờ nói "bài 3.1") và luôn tự nêu đáp án đúng sau khi bạn trả lời.
 - Ảnh trang chỉ được gửi khi một Unit mới xuất hiện trong phiên, không gửi lặp mỗi lượt.
 
+Mặc định lần học đầu bắt đầu từ **Unit 6** (Unit đã xong thì bỏ qua). Đổi bằng `eng-agent ask --start-unit 1`
+hoặc biến môi trường `ENG_AGENT_START_UNIT`; `/learn N` vẫn mở thẳng Unit N.
+
 Lệnh trong lúc chat: `/learn [N]`, `/next`, `/style [mô tả|off]`, `/progress`, `/new`, `/help`, `/quit`.
 
 ## Cấu trúc mã
