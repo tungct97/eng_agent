@@ -78,11 +78,14 @@ Cũng có thể nói tự nhiên: "dạy tôi unit 5", "bài tiếp"."""
 
 
 def _print_answer(ans) -> None:
+    from .tutor import PHASE_LABEL
+
     print(ans.text)
     for p in ans.images:
         print("[ảnh]", p)
     if ans.unit_no and ans.part:
-        print(f"[Unit {ans.unit_no} · phần {ans.part[0]}/{ans.part[1]}]")
+        label = PHASE_LABEL.get(ans.phase or "", "tóm tắt")
+        print(f"[Unit {ans.unit_no} · phần {ans.part[0]}/{ans.part[1]} · {label}]")
 
 
 def cmd_ask(cfg: Settings, a) -> None:
