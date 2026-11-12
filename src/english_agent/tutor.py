@@ -58,9 +58,14 @@ def lesson_plan(n_parts: int) -> list[tuple[str, int]]:
 
 PHASE_TASK = {
     "teach": (
-        "PHASE 1 - vocabulary. Introduce ONLY the part above: list 4-6 key words or phrases that really appear in it, each with "
-        "its Vietnamese meaning and one short English example sentence. Do not ask any question; end by telling the learner "
-        'to say "tiếp tục" when they have memorised these words.'
+        "PHASE 1 - vocabulary. Introduce ONLY the part above. Pick 4-6 real vocabulary words or phrases that appear in it "
+        "(never headings, labels, grammar terms or instructions of the book). Use EXACTLY this layout, one block per word:\n"
+        "1. **english word** /pronunciation if the excerpt gives it/ - Vietnamese meaning\n"
+        "   Example: one short ENGLISH sentence using the word (take the book's own example when the excerpt has one)\n"
+        "   Nghĩa: Vietnamese translation of that sentence\n"
+        "Every word MUST have an English example sentence and its Vietnamese translation; never skip them and never write the "
+        "example in Vietnamese only. Do not ask any question; end by telling the learner to say \"tiếp tục\" when they have "
+        "memorised these words."
     ),
     "words": (
         "PHASE 2 - word practice. Give ONE Vietnamese word or phrase taken from the part above and ask the learner to write "

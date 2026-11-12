@@ -181,6 +181,7 @@ def test_lesson_walks_through_plan_without_repeating(tmp_path):
     assert (a1.mode, a1.unit_no, a1.part, a1.phase) == ("lesson", 1, (1, 3), "teach")
     assert "hello hello" in llm.human() and "goodbye" not in llm.human()  # chỉ phần 1
     assert "PHASE 1" in llm.human() and "just started this unit" in llm.human()
+    assert "Every word MUST have an English example sentence" in llm.human()  # lỗi thật: phần 2 thiếu câu ví dụ
 
     a2 = tutor.chat(sid, "tiếp tục")
     assert a2.part == (2, 3) and a2.phase == "teach" and "goodbye" in llm.human() and "hello hello" not in llm.human()
