@@ -135,9 +135,22 @@ def test_old_database_without_lesson_step_is_migrated(tmp_path):
 
 
 # ----------------------------------------------------------------- điều hướng
+ASK_LONG = (
+    "hãy giúp tôi học tiếng anh theo từng unit. đầu tiên hãy cho tôi học thuộc các từ vựng bằng cách bạn sẽ giới thiệu "
+    "các từ vựng trong unit đó, chia làm 2 hoặc 3 phần cho dễ học. xong rồi cho tôi làm bài tập"
+)
+
+
+def test_long_learning_request_starts_a_lesson(tmp_path):
+    """Lỗi thật: câu này không khớp LEARN nên rơi vào chat tự do (tìm sách, trả lời một lượt, bịa bài 1.4)."""
+    cfg, llm, store, tutor = make(tmp_path)
+    ans = tutor.chat(tutor.new_session(), ASK_LONG)
+    assert ans.mode == "lesson" and ans.phase == "teach" and ans.part == (1, 3) and tutor.retriever.calls == []
+
+
 def test_intent_patterns():
     for text in ["bạn có thể dạy tôi học tiếng anh được không?", "bạn hãy dạy tôi theo từng unit được khong?",
-                 "dạy tôi unit 5", "học theo từng unit", "teach me", "start a lesson"]:
+                 "dạy tôi unit 5", "học theo từng unit", ASK_LONG, "teach me", "start a lesson"]:
         assert LEARN.search(text), text
     for text in ["bài tiếp", "unit tiếp theo", "next unit", "Next lesson please"]:
         assert NEXT.search(text), text

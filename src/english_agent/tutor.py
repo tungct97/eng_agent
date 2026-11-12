@@ -104,7 +104,11 @@ NO_EXCERPT = "(no relevant excerpt found in the textbook)"
 ALL_DONE = "Bạn đã học hết các Unit trong sách rồi, chúc mừng! Bạn có thể nói 'dạy unit N' để ôn lại một Unit bất kỳ."
 
 UNIT_NO = re.compile(r"\bunit\s*(\d{1,3})\b", re.I)
-LEARN = re.compile(r"\b(dạy|teach)\b|học (theo )?(từng )?unit|bắt đầu (học|bài)|start (a )?lesson|let'?s learn|learn unit", re.I)
+LEARN = re.compile(
+    r"\b(dạy|teach)\b|\bhọc\b[^.?!\n]{0,40}\bunit\b|theo (từng )?unit|(giúp|muốn|cho|hãy|cùng) (tôi |mình |em )?(học|luyện)\b|"
+    r"bắt đầu (học|bài)|start (a )?lesson|let'?s learn|learn unit",
+    re.I,
+)
 NEXT = re.compile(r"unit (tiếp|kế|mới|sau)|bài (tiếp|kế|mới|sau)|next (unit|lesson)", re.I)
 STYLE_RE = re.compile(
     r"bằng cách|theo cách|bắt tôi|hỏi tôi|đố tôi|cho tôi (làm|dịch)|mỗi lần|từng (từ|câu)\b|một từ|1 từ|"
