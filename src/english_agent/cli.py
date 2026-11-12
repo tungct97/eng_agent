@@ -6,7 +6,9 @@
     eng-agent build    # chạy cả 3 bước trên
     eng-agent build --skip-ocr   # chỉ chunk + index (dùng build/book.md có sẵn, không cần ảnh scan)
     eng-agent search "bruise"   # xem tìm kiếm trả về gì (không cần LLM)
-    eng-agent ask               # hỏi đáp với LLM local (Ollama)
+    eng-agent ask               # hội thoại với LLM local (Ollama), lưu vào conversations.db
+    eng-agent ask -c            # tiếp tục phiên gần nhất
+    eng-agent sessions          # các phiên đã lưu;  eng-agent history 3  # xem lại phiên #3
 
 (cũng chạy được bằng: python -m english_agent <lệnh>)
 """
@@ -17,6 +19,11 @@ from dataclasses import replace
 from pathlib import Path
 
 from .config import Settings
+
+try:  # bật chỉnh sửa dòng kiểu readline cho input(): xoá/di chuyển đúng với chữ có dấu UTF-8 (tránh ký tự lỗi �)
+    import readline  # noqa: F401
+except ImportError:  # Windows thuần không có readline
+    pass
 
 
 def cmd_ocr(cfg: Settings, a) -> None:
@@ -60,26 +67,103 @@ def cmd_search(cfg: Settings, a) -> None:
         print("   ảnh:", p)
 
 
+HELP = """Lệnh trong lúc chat:
+  /learn [N]   học theo Unit (bỏ N = Unit tiếp theo chưa học xong)
+  /next        xong Unit này, sang Unit tiếp theo
+  /progress    xem tiến độ học
+  /style [mô tả | off]   đặt cách học, vd: /style mỗi lần đưa 1 từ tiếng Việt, tôi dịch sang tiếng Anh
+  /new         mở phiên mới
+  /help        hiện trợ giúp      /quit  thoát
+Cũng có thể nói tự nhiên: "dạy tôi unit 5", "bài tiếp"."""
+
+
+def _print_answer(ans) -> None:
+    from .tutor import PHASE_LABEL
+
+    print(ans.text)
+    for p in ans.images:
+        print("[ảnh]", p)
+    if ans.unit_no and ans.part:
+        label = PHASE_LABEL.get(ans.phase or "", "tóm tắt")
+        print(f"[Unit {ans.unit_no} · phần {ans.part[0]}/{ans.part[1]} · {label}]")
+
+
 def cmd_ask(cfg: Settings, a) -> None:
     from .tutor import Tutor
 
     tutor = Tutor(cfg)
-
-    def one(q: str) -> None:
-        ans = tutor.ask(q)
-        print(ans.text)
-        for p in ans.images:
-            print("[ảnh]", p)
+    if a.session:
+        sid = a.session
+        try:
+            tutor.store.session(sid)
+        except KeyError as e:
+            raise SystemExit(f"{e.args[0]}. Xem các phiên có sẵn: eng-agent sessions")
+    elif a.cont and tutor.store.latest_session():
+        sid = tutor.store.latest_session()
+    else:
+        sid = tutor.new_session()
 
     if a.question:
-        return one(a.question)
+        return _print_answer(tutor.chat(sid, a.question))
+
+    past = tutor.store.history(sid)
+    print(f"Phiên #{sid} ({len(past)} tin nhắn đã lưu trong {cfg.db_path}). Gõ /help để xem lệnh.")
+    for m in past[-4:]:  # nhắc lại vài tin gần nhất khi tiếp tục phiên cũ
+        print(f"{'bạn' if m.role == 'user' else 'tutor'}> {m.content[:200]}")
     while True:
         try:
             q = input("\nbạn> ").strip()
         except (EOFError, KeyboardInterrupt):
             break
-        if q:
-            one(q)
+        if not q:
+            continue
+        cmd, _, arg = q.partition(" ")
+        if cmd in ("/quit", "/exit"):
+            break
+        if cmd == "/help":
+            print(HELP)
+        elif cmd == "/new":
+            sid = tutor.new_session()
+            print(f"Phiên mới #{sid}")
+        elif cmd == "/style":
+            arg = arg.strip()
+            if arg.lower() in ("off", "tắt", "xoá", "xoa"):
+                tutor.store.set_style(sid, None)
+                print("Đã tắt cách học riêng.")
+            elif arg:
+                tutor.store.set_style(sid, arg[:300])
+                print(f"Đã đặt cách học: {arg[:300]}")
+            else:
+                print("Cách học hiện tại:", tutor.store.session(sid).get("style") or "(mặc định)")
+        elif cmd == "/progress":
+            print("\n".join(tutor.progress_lines()))
+        elif cmd in ("/learn", "/next"):
+            q = f"dạy tôi unit {arg.strip()}" if cmd == "/learn" and arg.strip().isdigit() else (
+                "dạy tôi học theo unit" if cmd == "/learn" else "bài tiếp")
+            _print_answer(tutor.chat(sid, q))
+        else:
+            try:
+                _print_answer(tutor.chat(sid, q))
+            except Exception as e:  # ví dụ Ollama chưa chạy; tin nhắn chưa được lưu nên gõ lại được
+                print(f"Lỗi: {e}")
+
+
+def cmd_sessions(cfg: Settings, a) -> None:
+    from .memory import ConversationStore
+
+    rows = ConversationStore(cfg.db_path).list_sessions()
+    if not rows:
+        print("Chưa có phiên nào.")
+    for r in rows:
+        unit = f" | đang học Unit {r['current_unit']}" if r["current_unit"] else ""
+        print(f"#{r['id']:<3} {r['updated_at']}  {r['messages']:>3} tin{unit}  {r['title'] or '(trống)'}")
+
+
+def cmd_history(cfg: Settings, a) -> None:
+    from .memory import ConversationStore
+
+    for m in ConversationStore(cfg.db_path).history(a.session):
+        print(f"[{m.created_at}] {'bạn' if m.role == 'user' else 'tutor'}> {m.content}\n")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -106,14 +190,23 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("search", help="xem kết quả tìm kiếm cho một câu hỏi")
     p.add_argument("query")
     p.set_defaults(fn=cmd_search)
-    p = sub.add_parser("ask", help="hỏi đáp với LLM local")
+    p = sub.add_parser("ask", help="hội thoại với LLM local (lưu vào conversations.db)")
     p.add_argument("-q", "--question", help="hỏi một câu rồi thoát (bỏ qua để vào chế độ hội thoại)")
+    p.add_argument("--start-unit", type=int, help="Unit bắt đầu học (mặc định 6, hoặc ENG_AGENT_START_UNIT); Unit đã xong thì bỏ qua")
+    p.add_argument("-c", "--continue", dest="cont", action="store_true", help="tiếp tục phiên gần nhất")
+    p.add_argument("-s", "--session", type=int, help="tiếp tục phiên theo số (xem bằng `eng-agent sessions`)")
     p.set_defaults(fn=cmd_ask)
+    sub.add_parser("sessions", help="liệt kê các phiên đã lưu").set_defaults(fn=cmd_sessions)
+    p = sub.add_parser("history", help="in toàn bộ một phiên đã lưu")
+    p.add_argument("session", type=int)
+    p.set_defaults(fn=cmd_history)
 
     a = ap.parse_args(argv)
     cfg = Settings()
     if a.root:
         cfg = replace(cfg, root=a.root)
+    if getattr(a, "start_unit", None):
+        cfg = replace(cfg, start_unit=a.start_unit)
     a.fn(cfg, a)
 
 

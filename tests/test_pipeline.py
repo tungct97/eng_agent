@@ -7,7 +7,6 @@ from langchain_core.documents import Document
 from english_agent import chunking, ocr
 from english_agent.config import Settings
 from english_agent.retrieval import assemble, fix_text
-from english_agent.tutor import NOT_FOUND, Tutor
 
 # ----------------------------------------------------------------- sách giả: 2 Unit
 BOOK = """# Page 1
@@ -155,7 +154,7 @@ def test_assemble_drops_far_hits_and_collects_images(tmp_path):
     r = assemble(fake_hits(cfg), PARENTS, practice=False, cfg=cfg)
     assert r.unit_ids == ["unit-002", "unit-001"]  # unit-009 xa quá ngưỡng, không có trong parents
     assert "Unit 2: Health: injuries - scan page 4" in r.context
-    assert r.images[0].name == "page_0004.jpg" and r.images[-1].name == "page_0004_fig1.jpg"
+    assert [p.name for p in r.images] == ["page_0004.jpg", "page_0004_fig1.jpg", "page_0002.jpg"]  # theo từng Unit
 
 
 def test_assemble_practice_uses_exercise_side(tmp_path):
@@ -164,28 +163,12 @@ def test_assemble_practice_uses_exercise_side(tmp_path):
     assert "2.1 ..." in r.context and r.images[0].name == "page_0005.jpg"
 
 
-class FakeRetriever:
-    def __init__(self, cfg, found=True):
-        self.cfg, self.found = cfg, found
-
-    def search(self, q):
-        hits = fake_hits(self.cfg) if self.found else [(fake_hits(self.cfg)[2][0], 0.9)]
-        return assemble(hits, PARENTS, False, self.cfg)
-
-
-class FakeLLM:
-    def invoke(self, messages):
-        self.last = messages
-        return type("R", (), {"content": "ok"})()
-
-
-def test_tutor_answers_and_refuses_off_topic(tmp_path):
+def test_assemble_pins_the_unit_being_studied_with_its_exercises(tmp_path):
     cfg = Settings(root=tmp_path)
-    llm = FakeLLM()
-    ans = Tutor(cfg, FakeRetriever(cfg), llm).ask("bruise?")
-    assert ans.text == "ok" and ans.units == ["unit-002", "unit-001"]
-    assert "Unit 2: Health: injuries" in llm.last[1][1]
-    assert Tutor(cfg, FakeRetriever(cfg, found=False), llm).ask("thời tiết?").text == NOT_FOUND
+    r = assemble([], PARENTS, practice=False, cfg=cfg, pinned=("unit-002",))
+    assert r.unit_ids == ["unit-002"]  # không cần có kết quả tìm kiếm
+    assert "bruise" in r.context and "[Exercises of this unit]" in r.context and "2.1 ..." in r.context
+    assert r.images[0].name == "page_0004.jpg"
 
 
 def test_fix_text_recovers_vietnamese_from_bad_terminal_locale():
