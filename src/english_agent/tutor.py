@@ -43,17 +43,16 @@ STYLE_NOTE = (
 LESSON_SIDE = """The learner asked a side question in the middle of a lesson. Answer it briefly from the excerpts, then remind
 them to answer your last question, or to say "tiếp tục" to go on."""
 
-# Mỗi Unit chia thành các phần (lesson_parts). Kế hoạch học: 1) giới thiệu từ vựng từng phần,
-# 2) từ tiếng Việt -> viết tiếng Anh, 3) câu tiếng Việt -> dịch sang tiếng Anh. Code chọn bước, LLM chỉ thực hiện.
-WORDS_PER_PART = 2      # số lượt "từ Việt -> Anh" cho mỗi phần
-SENTENCES_PER_PART = 2  # số lượt "câu Việt -> Anh" cho mỗi phần
+# Mỗi Unit chia thành các phần (lesson_parts). Mỗi phần: (1) giới thiệu từ vựng + câu luyện đầu tiên,
+# (2) luyện lặp lại: một nhóm "từ Việt -> viết tiếng Anh", rồi một nhóm "câu Việt -> dịch sang tiếng Anh", rồi lại từ đầu,
+# cho tới khi người học gõ "tiếp tục" để sang phần sau. Code chọn bước, LLM chỉ thực hiện.
+WORDS_PER_ROUND = 3      # số lượt "từ Việt -> Anh" trong một vòng luyện
+SENTENCES_PER_ROUND = 2  # số lượt "câu Việt -> Anh" trong một vòng luyện
 
 
-def lesson_plan(n_parts: int) -> list[tuple[str, int]]:
-    plan = [("teach", i) for i in range(n_parts)]
-    plan += [("words", i) for i in range(n_parts) for _ in range(WORDS_PER_PART)]
-    plan += [("sentences", i) for i in range(n_parts) for _ in range(SENTENCES_PER_PART)]
-    return plan
+def practice_phase(k: int) -> str:
+    """Lượt luyện thứ k (k=0 là câu hỏi đi kèm bài giới thiệu): words x3, sentences x2, rồi lặp lại."""
+    return "words" if k % (WORDS_PER_ROUND + SENTENCES_PER_ROUND) < WORDS_PER_ROUND else "sentences"
 
 
 PHASE_TASK = {
@@ -63,17 +62,18 @@ PHASE_TASK = {
         "1. **english word** /pronunciation if the excerpt gives it/ - Vietnamese meaning\n"
         "   Example: one short ENGLISH sentence using the word (take the book's own example when the excerpt has one)\n"
         "   Nghĩa: Vietnamese translation of that sentence\n"
-        "Every word MUST have an English example sentence and its Vietnamese translation; never skip them and never write the "
-        "example in Vietnamese only. Do not ask any question; end by telling the learner to say \"tiếp tục\" when they have "
-        "memorised these words."
+        "Every word MUST have an English example sentence and its Vietnamese translation; never skip them. "
+        "After the list write one line: \"Học xong thì làm bài luyện nhé:\" and then ask the FIRST practice question: give ONE "
+        "Vietnamese meaning of a word from your list and ask the learner to write the English word. Then wait."
     ),
     "words": (
-        "PHASE 2 - word practice. Give ONE Vietnamese word or phrase taken from the part above and ask the learner to write "
-        "it in English. Write the Vietnamese item out in full, choose one not used earlier in this conversation, then wait."
+        "WORD PRACTICE. Give ONE Vietnamese word or phrase and ask the learner to write it in English. Pick it at random from "
+        "the words introduced for this part (listed above), one not asked recently in this conversation. Write the Vietnamese "
+        "item out in full, then wait."
     ),
     "sentences": (
-        "PHASE 3 - sentence practice. Write ONE short Vietnamese sentence that uses vocabulary from the part above and ask the "
-        "learner to translate it into English. Write the sentence out in full, make it new, then wait."
+        "SENTENCE PRACTICE. Write ONE short Vietnamese sentence that uses a word introduced for this part (listed above) and ask "
+        "the learner to translate it into English. Write the sentence out in full, make it new, then wait."
     ),
 }
 PHASE_LABEL = {"teach": "từ vựng", "words": "viết từ", "sentences": "dịch câu"}
@@ -88,7 +88,7 @@ def lesson_instruction(kind: str, phase: str | None, summary: bool) -> str:
         else ""
     )
     if summary:
-        return judge + (
+        return (
             'All parts of this unit have been taught and practised: summarise the unit in three lines and tell the learner to say '
             '"bài tiếp" for the next unit. Do not ask more questions.'
         )
@@ -267,39 +267,44 @@ class Tutor:
                 self.store.set_current_unit(session_id, unit)  # đổi Unit -> bước học về 0
             if self.store.progress().get(unit) != "done":
                 self.store.set_progress(unit, "learning")
-        step = self.store.session(session_id)["lesson_step"] if unit else 0
+        cur = self.store.session(session_id)
+        lp, ls = (cur["lesson_part"], cur["lesson_step"]) if unit else (0, 0)
         pinned = tuple(unit_key(u) for u in route.pinned)
 
-        part, cur_phase = None, None
+        part, cur_phase, commit = None, None, None
         system, instr = SYSTEM, ""
         kind = route.kind
         if unit and kind in ("start", "continue", "reply"):
-            total = len(lesson_plan(len(self.parts_of(unit))))
             if kind == "start":
-                step = 0
-            if step >= total and kind != "start" and self.store.progress().get(unit) == "done":
+                lp, ls = 0, 0
+            if lp >= len(self.parts_of(unit)) and kind != "start" and self.store.progress().get(unit) == "done":
                 kind = "side"  # Unit đã dạy xong và đã tóm tắt: chỉ trả lời tự do, không tóm tắt lại
 
         if unit and kind in ("start", "continue", "reply"):
             parts, title = self.parts_of(unit), self.parents[unit_key(unit)]["title"]
             n = len(parts)
-            plan = lesson_plan(n)
+            if kind == "continue" and ls > 0:
+                lp, ls = lp + 1, 0  # người học gõ "tiếp tục" -> sang phần kế
             r = assemble([], self.parents, False, self.cfg, pinned)  # chỉ dùng để lấy Unit + ảnh; KHÔNG tìm thêm Unit khác
             system += "\n\n" + LESSON_RULES
             if style:
                 system += "\n\n" + STYLE_NOTE.format(style=style)
-            if step < len(plan):
-                phase, idx = plan[step]
+            if lp < n:
                 page = self.parents[unit_key(unit)]["pages"][0]
-                context = f"[Unit {unit}: {title} - part {idx + 1} of {n} - scan page {page}]\n{parts[idx]}"
-                instr = lesson_instruction(kind, phase, summary=False)
-                self.store.set_lesson_step(session_id, step + 1)
-                part = (idx + 1, n)
-                cur_phase = phase
-            else:  # đã dạy hết các phần -> tóm tắt, đánh dấu xong
+                context = f"[Unit {unit}: {title} - part {lp + 1} of {n} - scan page {page}]\n{parts[lp]}"
+                if ls == 0:  # giới thiệu từ vựng của phần này + câu luyện đầu tiên
+                    cur_phase, commit = "teach", (lp, 1, True)
+                else:  # luyện lặp lại cho tới khi người học nói "tiếp tục"
+                    cur_phase, commit = practice_phase(ls), (lp, ls + 1, False)
+                    if cur["part_intro"]:
+                        context += f"\n\n[Words already introduced for this part (your earlier message)]\n{cur['part_intro']}"
+                instr = lesson_instruction(kind, cur_phase, summary=False)
+                part = (lp + 1, n)
+            else:  # đã học hết các phần -> tóm tắt, đánh dấu xong
                 context = f"[Unit {unit}: {title} - all {n} parts have been taught]"
                 instr = lesson_instruction(kind, None, summary=True)
                 self.store.set_progress(unit, "done")
+                self.store.set_lesson(session_id, n, 0)
                 part = (n, n)
         else:
             r = self.retriever.search(self._standalone_query(text, history), pinned)
@@ -316,6 +321,8 @@ class Tutor:
         messages += [(m.role, m.content[: self.cfg.history_chars]) for m in history]
         messages.append(("human", "\n\n".join(human)))
         reply = self.llm.invoke(messages).content
+        if commit:  # chỉ lưu vị trí sau khi LLM trả lời xong
+            self.store.set_lesson(session_id, commit[0], commit[1], reply[:2500] if commit[2] else None)
 
         # chỉ gửi ảnh khi có Unit mới chưa từng hiện trong phiên (tránh gửi lại ảnh cũ mỗi lượt)
         images = [p for uid in r.unit_ids if uid not in seen_units for p in r.unit_images[uid] if p.exists()]

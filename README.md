@@ -75,10 +75,11 @@ Cấu hình qua biến môi trường `ENG_AGENT_ROOT`, `ENG_AGENT_EMBED_MODEL`,
   câu hỏi luyện tập, hay "tiếp tục" đều được hiểu đúng và được chấm.
 - **Hiểu câu nối tiếp khi tìm sách:** câu hỏi ngắn được viết lại thành câu tìm kiếm đầy đủ dựa trên cuộc trò chuyện.
 - **Học theo Unit:** nói "dạy tôi học" (hoặc `/learn`, `/learn 5`) để bắt đầu từ Unit chưa học xong tiếp theo.
-  Mỗi Unit được chia 2–5 phần và học theo kế hoạch cố định do code điều khiển: (1) giới thiệu từ vựng từng phần,
-  (2) tutor đưa từ tiếng Việt, bạn viết tiếng Anh, (3) tutor đưa câu tiếng Việt, bạn dịch sang tiếng Anh. Tutor tự
-  viết ra mọi từ/câu và tự nêu đáp án, không bắt bạn tìm bài tập trong sách. Gõ "tiếp tục" sau phần từ vựng;
-  nói "bài tiếp" (hoặc `/next`) để sang Unit sau.
+  Mỗi Unit được chia 2–5 phần, học theo luồng do code điều khiển. Với MỖI phần: (1) tutor giới thiệu 1/N từ vựng
+  (từ, nghĩa, câu ví dụ + dịch) kèm câu luyện đầu tiên; (2) luyện lặp lại: tutor đưa từ tiếng Việt ngẫu nhiên trong
+  các từ vừa học, bạn viết tiếng Anh (3 lượt), rồi đưa câu tiếng Việt bạn dịch sang tiếng Anh (2 lượt), rồi lặp lại
+  vòng đó; (3) chỉ khi bạn gõ "tiếp tục" mới sang phần sau. Hết phần cuối thì tóm tắt Unit; nói "bài tiếp"
+  (hoặc `/next`) để sang Unit sau. Tutor tự viết mọi từ/câu và tự nêu đáp án, không bắt bạn tìm bài tập trong sách.
 - **Lưu vào SQLite** (`conversations.db`): `sessions` (phiên + Unit đang học), `messages` (từng tin, kèm Unit và ảnh đã
   dùng), `progress` (Unit nào đang học / đã xong). Mở lại bằng `ask -c` hoặc `ask -s <số phiên>`; tiến độ dùng chung
   cho mọi phiên.

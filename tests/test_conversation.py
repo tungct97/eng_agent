@@ -7,7 +7,7 @@ from english_agent.config import Settings
 from english_agent.memory import ConversationStore
 from english_agent.retrieval import assemble
 from english_agent.tutor import (
-    ALL_DONE, CONTINUE_RE, LEARN, LESSON_RULES, NEXT, QUESTION, STYLE_NOTE, STYLE_RE, Tutor, lesson_parts, lesson_plan,
+    ALL_DONE, CONTINUE_RE, LEARN, LESSON_RULES, NEXT, QUESTION, STYLE_NOTE, STYLE_RE, Tutor, lesson_parts, practice_phase,
 )
 
 
@@ -113,11 +113,13 @@ def test_lesson_step_resets_only_when_unit_changes(tmp_path):
     store = ConversationStore(":memory:")
     sid = store.new_session()
     store.set_current_unit(sid, 5)
-    store.set_lesson_step(sid, 2)
-    store.set_current_unit(sid, 5)  # cùng Unit: giữ nguyên bước
-    assert store.session(sid)["lesson_step"] == 2
+    store.set_lesson(sid, 2, 4, "intro")
+    store.set_current_unit(sid, 5)  # cùng Unit: giữ nguyên vị trí
+    s = store.session(sid)
+    assert (s["lesson_part"], s["lesson_step"], s["part_intro"]) == (2, 4, "intro")
     store.set_current_unit(sid, 6)  # đổi Unit: về 0
-    assert store.session(sid)["lesson_step"] == 0
+    s = store.session(sid)
+    assert (s["lesson_part"], s["lesson_step"], s["part_intro"]) == (0, 0, None)
 
 
 def test_old_database_without_lesson_step_is_migrated(tmp_path):
@@ -131,7 +133,8 @@ def test_old_database_without_lesson_step_is_migrated(tmp_path):
     old.commit()
     old.close()
     store = ConversationStore(path)
-    assert store.session(1)["lesson_step"] == 0 and store.session(1)["current_unit"] == 5
+    assert store.session(1)["lesson_step"] == 0 and store.session(1)["lesson_part"] == 0
+    assert store.session(1)["current_unit"] == 5
     assert store.session(1)["style"] is None
 
 
@@ -165,16 +168,12 @@ def test_intent_patterns():
 
 
 # ----------------------------------------------------------------- bài học từng phần
-def test_lesson_plan_order():
-    plan = lesson_plan(3)
-    assert [p for p, _ in plan[:3]] == ["teach"] * 3 and [i for _, i in plan[:3]] == [0, 1, 2]  # học hết từ vựng trước
-    assert plan[3:9] == [("words", 0)] * 2 + [("words", 1)] * 2 + [("words", 2)] * 2
-    assert plan[9:] == [("sentences", 0)] * 2 + [("sentences", 1)] * 2 + [("sentences", 2)] * 2
-    assert len(lesson_plan(1)) == 5
+def test_practice_phase_cycles_words_then_sentences():
+    assert [practice_phase(k) for k in range(10)] == ["words"] * 3 + ["sentences"] * 2 + ["words"] * 3 + ["sentences"] * 2
 
 
-def test_lesson_walks_through_plan_without_repeating(tmp_path):
-    """Mỗi lượt đúng MỘT hoạt động: giới thiệu từng phần, rồi từ Việt -> Anh, rồi câu Việt -> Anh; không tìm thêm Unit lạ."""
+def test_part_flow_teach_then_practice_loop_until_continue(tmp_path):
+    """Luồng mong muốn: giới thiệu phần 1 -> luyện lặp (từ Việt->Anh, rồi câu Việt->Anh, rồi lại từ đầu) -> 'tiếp tục' -> phần 2."""
     cfg, llm, store, tutor = make(tmp_path)
     sid = tutor.new_session()
 
@@ -182,36 +181,39 @@ def test_lesson_walks_through_plan_without_repeating(tmp_path):
     assert (a1.mode, a1.unit_no, a1.part, a1.phase) == ("lesson", 1, (1, 3), "teach")
     assert "hello hello" in llm.human() and "goodbye" not in llm.human()  # chỉ phần 1
     assert "PHASE 1" in llm.human() and "just started this unit" in llm.human()
-    assert "Every word MUST have an English example sentence" in llm.human()  # lỗi thật: phần 2 thiếu câu ví dụ
+    assert "Every word MUST have an English example sentence" in llm.human()
+    assert "FIRST practice question" in llm.human()
+    assert store.session(sid)["part_intro"] == a1.text  # bài giới thiệu được nhớ để luyện đúng từ đã dạy
 
-    a2 = tutor.chat(sid, "tiếp tục")
-    assert a2.part == (2, 3) and a2.phase == "teach" and "goodbye" in llm.human() and "hello hello" not in llm.human()
-    a3 = tutor.chat(sid, "tiếp tục")
-    assert a3.part == (3, 3) and "thanks" in llm.human()
+    phases = []
+    for i in range(7):  # 7 câu trả lời liên tiếp vẫn ở phần 1, KHÔNG tự sang phần 2
+        ans = tutor.chat(sid, f"answer {i}")
+        assert ans.part == (1, 3) and "judge the learner's reply" in llm.human()
+        assert a1.text in llm.human()  # từ luyện lấy từ bài giới thiệu
+        phases.append(ans.phase)
+    assert phases == ["words", "words", "sentences", "sentences", "words", "words", "words"]
+    assert "hello hello" in llm.human()  # vẫn ngữ cảnh phần 1
 
-    a4 = tutor.chat(sid, "ok")  # bắt đầu luyện từ: phần 1
-    assert a4.phase == "words" and a4.part == (1, 3) and "PHASE 2" in llm.human() and "hello hello" in llm.human()
-    a5 = tutor.chat(sid, "hello")  # trả lời -> chấm + nêu đáp án + câu từ kế tiếp
-    assert a5.phase == "words" and "judge the learner's reply" in llm.human()
-    assert "correct answer yourself" in llm.human()
+    nxt = tutor.chat(sid, "tiếp tục")  # chỉ khi người học nói vậy mới sang phần 2
+    assert nxt.part == (2, 3) and nxt.phase == "teach" and "goodbye" in llm.human() and "hello hello" not in llm.human()
+    assert "judge" not in llm.human() and store.session(sid)["lesson_step"] == 1
+    assert store.session(sid)["part_intro"] == nxt.text
 
-    for i in range(9):  # đến bước cuối của kế hoạch (bước 15)
-        tutor.chat(sid, "answer")
-    last = tutor.chat(sid, "answer")
-    assert last.phase == "sentences" and last.part == (3, 3) and "PHASE 3" in llm.human()
-
-    fin = tutor.chat(sid, "answer")  # hết kế hoạch -> tóm tắt, đánh dấu xong
-    assert fin.part == (3, 3) and fin.phase is None and "summarise the unit" in llm.human()
+    tutor.chat(sid, "ok")
+    tutor.chat(sid, "tiếp tục")  # phần 3
+    last = tutor.chat(sid, "tiếp tục")  # hết phần 3 -> tóm tắt, đánh dấu xong
+    assert last.part == (3, 3) and last.phase is None and "summarise the unit" in llm.human()
     assert store.progress() == {1: "done"}
-    assert tutor.retriever.calls == []
+    assert tutor.retriever.calls == []  # suốt bài học không tìm thêm Unit lạ
     assert all("exercise 1." not in c[-1][1] for c in llm.main_calls())
 
 
 def test_after_summary_it_does_not_summarise_again(tmp_path):
     cfg, llm, store, tutor = make(tmp_path)
     sid = tutor.new_session()
-    for text in ["dạy tôi học"] + ["a"] * len(lesson_plan(3)):  # cả kế hoạch + tóm tắt
-        tutor.chat(sid, text)
+    tutor.chat(sid, "dạy tôi học")
+    for _ in range(3):  # 'tiếp tục' x3 -> qua 3 phần rồi tóm tắt
+        tutor.chat(sid, "tiếp tục")
     ans = tutor.chat(sid, "cảm ơn")  # Unit đã xong: trả lời tự do (có tìm sách), không tóm tắt lại
     assert ans.part is None and "summarise" not in llm.human()
     assert len(tutor.retriever.calls) == 1
@@ -222,11 +224,11 @@ def test_side_question_does_not_advance_lesson(tmp_path):
     sid = tutor.new_session()
     tutor.chat(sid, "dạy tôi học")
     ans = tutor.chat(sid, "bruise nghĩa là gì?")
-    assert ans.part is None and store.session(sid)["lesson_step"] == 1  # vẫn đứng ở bước 2
+    assert ans.part is None and store.session(sid)["lesson_step"] == 1  # vị trí không đổi
     assert tutor.retriever.calls == [("bruise injury treatment", ("unit-001",))]  # câu hỏi được viết lại + ghim Unit
     assert "side question" in llm.main_calls()[-1][0][1]
-    nxt = tutor.chat(sid, "dọn cái bảng")
-    assert nxt.part == (2, 3)
+    nxt = tutor.chat(sid, "dọn cái bảng")  # rồi trả lời tiếp câu luyện tập
+    assert nxt.part == (1, 3) and nxt.phase == "words" and store.session(sid)["lesson_step"] == 2
 
 
 def test_continue_moves_on_without_grading(tmp_path):
@@ -237,16 +239,18 @@ def test_continue_moves_on_without_grading(tmp_path):
     assert ans.part == (2, 3) and "judge" not in llm.human()
 
 
-def test_lesson_step_survives_restart(tmp_path):
+def test_lesson_position_survives_restart(tmp_path):
     db = tmp_path / "c.db"
     cfg, llm, store, tutor = make(tmp_path, db)
     sid = tutor.new_session()
     tutor.chat(sid, "dạy tôi học")
+    tutor.chat(sid, "answer")
     store.close()
 
     cfg2, llm2, store2, tutor2 = make(tmp_path, db)
-    ans = tutor2.chat(sid, "dọn cái bảng")
-    assert ans.part == (2, 3)  # nhớ đã dạy tới bước 1
+    ans = tutor2.chat(sid, "answer 2")
+    assert ans.part == (1, 3) and store2.session(sid)["lesson_step"] == 3  # nhớ đang luyện ở phần 1
+    assert "reply 1" in llm2.human()  # bài giới thiệu được lấy lại từ DB
     msgs = llm2.main_calls()[0]
     assert [m[0] for m in msgs[:3]] == ["system", "user", "assistant"]  # lịch sử cũ được nạp lại
 

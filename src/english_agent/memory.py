@@ -16,7 +16,9 @@ CREATE TABLE IF NOT EXISTS sessions(
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     title        TEXT,
     current_unit INTEGER,           -- Unit đang học trong phiên này (NULL = chat tự do)
-    lesson_step  INTEGER NOT NULL DEFAULT 0,  -- số lượt đã dạy trong Unit đó (code dùng để chọn phần kế tiếp)
+    lesson_part  INTEGER NOT NULL DEFAULT 0,  -- phần (0-based) của Unit đang học; = số phần nghĩa là đã học hết
+    lesson_step  INTEGER NOT NULL DEFAULT 0,  -- số lượt đã làm trong phần đó (0 = chưa giới thiệu, 1 = vừa giới thiệu, >1 = đang luyện)
+    part_intro   TEXT,              -- tin giới thiệu từ vựng của phần hiện tại (để lấy từ luyện tập đúng từ đã dạy)
     style        TEXT,              -- cách học người học yêu cầu (vd. 'đưa 1 từ, bắt tôi dịch'); áp dụng mọi lượt
     created_at   TEXT NOT NULL,
     updated_at   TEXT NOT NULL
@@ -63,7 +65,12 @@ class ConversationStore:
         with self.db:
             self.db.executescript(SCHEMA)
             cols = {r["name"] for r in self.db.execute("PRAGMA table_info(sessions)")}
-            for col, ddl in (("lesson_step", "INTEGER NOT NULL DEFAULT 0"), ("style", "TEXT")):
+            for col, ddl in (
+                ("lesson_step", "INTEGER NOT NULL DEFAULT 0"),
+                ("lesson_part", "INTEGER NOT NULL DEFAULT 0"),
+                ("part_intro", "TEXT"),
+                ("style", "TEXT"),
+            ):
                 if col not in cols:  # DB tạo bởi phiên bản cũ
                     self.db.execute(f"ALTER TABLE sessions ADD COLUMN {col} {ddl}")
 
@@ -101,18 +108,24 @@ class ConversationStore:
         """Đặt Unit đang học. Đổi sang Unit khác thì bước học về 0; đặt lại đúng Unit hiện tại thì giữ nguyên bước."""
         with self.db:
             self.db.execute(
-                "UPDATE sessions SET lesson_step = CASE WHEN current_unit IS ? THEN lesson_step ELSE 0 END, "
+                "UPDATE sessions SET "
+                "lesson_part = CASE WHEN current_unit IS ? THEN lesson_part ELSE 0 END, "
+                "lesson_step = CASE WHEN current_unit IS ? THEN lesson_step ELSE 0 END, "
+                "part_intro = CASE WHEN current_unit IS ? THEN part_intro ELSE NULL END, "
                 "current_unit=?, updated_at=? WHERE id=?",
-                (unit, unit, _now(), sid),
+                (unit, unit, unit, unit, _now(), sid),
             )
 
     def set_style(self, sid: int, style: str | None) -> None:
         with self.db:
             self.db.execute("UPDATE sessions SET style=?, updated_at=? WHERE id=?", (style or None, _now(), sid))
 
-    def set_lesson_step(self, sid: int, step: int) -> None:
+    def set_lesson(self, sid: int, part: int, step: int, intro: str | None = None) -> None:
+        """Lưu vị trí bài học. `intro` chỉ được ghi khi truyền vào (lúc giới thiệu từ vựng một phần mới)."""
         with self.db:
-            self.db.execute("UPDATE sessions SET lesson_step=?, updated_at=? WHERE id=?", (step, _now(), sid))
+            self.db.execute("UPDATE sessions SET lesson_part=?, lesson_step=?, updated_at=? WHERE id=?", (part, step, _now(), sid))
+            if intro is not None:
+                self.db.execute("UPDATE sessions SET part_intro=? WHERE id=?", (intro, sid))
 
     # ------------------------------------------------------------ tin nhắn
     def add_message(self, sid: int, role: str, content: str, units=(), images=()) -> None:
