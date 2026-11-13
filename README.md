@@ -78,8 +78,9 @@ Cấu hình qua biến môi trường `ENG_AGENT_ROOT`, `ENG_AGENT_EMBED_MODEL`,
   Mỗi Unit được chia 2–5 phần, học theo luồng do code điều khiển. Với MỖI phần: (1) tutor giới thiệu 1/N từ vựng
   (từ, nghĩa, câu ví dụ + dịch) kèm câu luyện đầu tiên; (2) luyện lặp lại: tutor đưa từ tiếng Việt ngẫu nhiên trong
   các từ vừa học, bạn viết tiếng Anh (3 lượt), rồi đưa câu tiếng Việt bạn dịch sang tiếng Anh (2 lượt), rồi lặp lại
-  vòng đó; (3) chỉ khi bạn gõ "tiếp tục" mới sang phần sau. Hết phần cuối thì tóm tắt Unit; nói "bài tiếp"
-  (hoặc `/next`) để sang Unit sau. Tutor tự viết mọi từ/câu và tự nêu đáp án, không bắt bạn tìm bài tập trong sách.
+  vòng đó; (3) chỉ khi bạn gõ "tiếp tục" mới sang phần sau. Sau phần cuối là **vòng ôn cả Unit**: tutor lặp lại
+  các câu tiếng Việt dùng từ của mọi phần để bạn dịch, cho tới khi bạn gõ "ok" thì tóm tắt và đánh dấu xong; nói
+  "bài tiếp" (hoặc `/next`) để sang Unit sau. Tutor tự viết mọi từ/câu và tự nêu đáp án, không bắt bạn tìm bài tập trong sách.
 - **Lưu vào SQLite** (`conversations.db`): `sessions` (phiên + Unit đang học), `messages` (từng tin, kèm Unit và ảnh đã
   dùng), `progress` (Unit nào đang học / đã xong). Mở lại bằng `ask -c` hoặc `ask -s <số phiên>`; tiến độ dùng chung
   cho mọi phiên.

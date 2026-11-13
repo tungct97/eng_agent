@@ -9,6 +9,7 @@
 """
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -75,8 +76,14 @@ PHASE_TASK = {
         "SENTENCE PRACTICE. Write ONE short Vietnamese sentence that uses a word introduced for this part (listed above) and ask "
         "the learner to translate it into English. Write the sentence out in full, make it new, then wait."
     ),
+    "review": (
+        "UNIT REVIEW. Write ONE new short Vietnamese sentence that uses one or two words chosen at random from ANY part of the "
+        "unit (all introduced words are listed above) and ask the learner to translate it into English. Write the sentence out "
+        "in full, make it new, then wait."
+    ),
 }
-PHASE_LABEL = {"teach": "từ vựng", "words": "viết từ", "sentences": "dịch câu"}
+PHASE_LABEL = {"teach": "từ vựng", "words": "viết từ", "sentences": "dịch câu", "review": "ôn cả Unit"}
+OK_RE = re.compile(r"^\s*(ok|okay|oke|ok rồi|ổn rồi|xong rồi|được rồi|đủ rồi|đã thuộc|thuộc rồi)\s*[.!]*\s*$", re.I)
 
 
 def lesson_instruction(kind: str, phase: str | None, summary: bool) -> str:
@@ -283,8 +290,8 @@ class Tutor:
         if unit and kind in ("start", "continue", "reply"):
             parts, title = self.parts_of(unit), self.parents[unit_key(unit)]["title"]
             n = len(parts)
-            if kind == "continue" and ls > 0:
-                lp, ls = lp + 1, 0  # người học gõ "tiếp tục" -> sang phần kế
+            if kind == "continue" and ls > 0 and lp < n:
+                lp, ls = lp + 1, 0  # người học gõ "tiếp tục" -> sang phần kế (sau phần cuối: vòng ôn cả Unit)
             r = assemble([], self.parents, False, self.cfg, pinned)  # chỉ dùng để lấy Unit + ảnh; KHÔNG tìm thêm Unit khác
             system += "\n\n" + LESSON_RULES
             if style:
@@ -300,11 +307,17 @@ class Tutor:
                         context += f"\n\n[Words already introduced for this part (your earlier message)]\n{cur['part_intro']}"
                 instr = lesson_instruction(kind, cur_phase, summary=False)
                 part = (lp + 1, n)
-            else:  # đã học hết các phần -> tóm tắt, đánh dấu xong
-                context = f"[Unit {unit}: {title} - all {n} parts have been taught]"
+            elif kind != "start" and OK_RE.search(text):  # người học nói "ok" khi đang ôn -> tóm tắt, đánh dấu xong
+                context = f"[Unit {unit}: {title} - all {n} parts have been taught and reviewed]"
                 instr = lesson_instruction(kind, None, summary=True)
                 self.store.set_progress(unit, "done")
                 self.store.set_lesson(session_id, n, 0)
+                part = (n, n)
+            else:  # vòng ôn: câu tiếng Việt dùng từ của cả Unit, lặp lại cho tới khi người học nói "ok"
+                intros = [i for i in json.loads(cur["unit_intros"]) if i]
+                context = f"[Unit {unit}: {title} - review of all {n} parts]\n" + "\n\n".join(i[:1500] for i in intros)
+                cur_phase, commit = "review", (n, ls + 1, None)
+                instr = lesson_instruction(kind, "review", summary=False)
                 part = (n, n)
         else:
             r = self.retriever.search(self._standalone_query(text, history), pinned)

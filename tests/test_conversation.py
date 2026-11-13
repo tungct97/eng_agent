@@ -1,4 +1,5 @@
 """Test hội thoại: bộ nhớ SQLite, lịch sử đưa lại cho LLM, học theo Unit từng phần. Không cần Ollama/Chroma."""
+import json
 import sqlite3
 
 from langchain_core.documents import Document
@@ -199,9 +200,25 @@ def test_part_flow_teach_then_practice_loop_until_continue(tmp_path):
     assert "judge" not in llm.human() and store.session(sid)["lesson_step"] == 1
     assert store.session(sid)["part_intro"] == nxt.text
 
-    tutor.chat(sid, "ok")
+    tutor.chat(sid, "ok")  # (đang ở phần 2: 'ok' chỉ là một câu trả lời)
+    assert store.session(sid)["lesson_part"] == 1
     tutor.chat(sid, "tiếp tục")  # phần 3
-    last = tutor.chat(sid, "tiếp tục")  # hết phần 3 -> tóm tắt, đánh dấu xong
+    assert store.session(sid)["lesson_part"] == 2 and store.progress() == {1: "learning"}
+
+    rev = tutor.chat(sid, "tiếp tục")  # hết phần 3 -> VÒNG ÔN cả Unit (chưa tóm tắt, chưa xong)
+    assert rev.phase == "review" and rev.part == (3, 3) and store.progress() == {1: "learning"}
+    human = llm.human()
+    assert "UNIT REVIEW" in human and "judge" not in human
+    assert "hello hello" not in human  # ôn bằng bài giới thiệu đã dạy, không đưa lại văn bản sách
+    intros = json.loads(store.session(sid)["unit_intros"])
+    assert len(intros) == 3 and all(i in human for i in intros)  # từ của CẢ 3 phần
+
+    for i in range(4):  # ôn lặp lại, không tự kết thúc
+        again = tutor.chat(sid, f"bản dịch {i}")
+        assert again.phase == "review" and "judge the learner's reply" in llm.human()
+    assert store.progress() == {1: "learning"}
+
+    last = tutor.chat(sid, "ok")  # người học nói ok -> tóm tắt, đánh dấu xong
     assert last.part == (3, 3) and last.phase is None and "summarise the unit" in llm.human()
     assert store.progress() == {1: "done"}
     assert tutor.retriever.calls == []  # suốt bài học không tìm thêm Unit lạ
@@ -212,8 +229,9 @@ def test_after_summary_it_does_not_summarise_again(tmp_path):
     cfg, llm, store, tutor = make(tmp_path)
     sid = tutor.new_session()
     tutor.chat(sid, "dạy tôi học")
-    for _ in range(3):  # 'tiếp tục' x3 -> qua 3 phần rồi tóm tắt
+    for _ in range(3):  # 'tiếp tục' x3 -> qua 3 phần, vào vòng ôn
         tutor.chat(sid, "tiếp tục")
+    tutor.chat(sid, "ok")  # kết thúc vòng ôn -> tóm tắt
     ans = tutor.chat(sid, "cảm ơn")  # Unit đã xong: trả lời tự do (có tìm sách), không tóm tắt lại
     assert ans.part is None and "summarise" not in llm.human()
     assert len(tutor.retriever.calls) == 1
